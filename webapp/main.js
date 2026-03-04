@@ -1,8 +1,13 @@
 const tg = window.Telegram?.WebApp;
 
 const userInfoEl = document.getElementById('user-info');
-const messageInput = document.getElementById('message-input');
-const sendButton = document.getElementById('send-button');
+const nameInput = document.getElementById('name');
+const phoneInput = document.getElementById('phone');
+const serviceSelect = document.getElementById('service');
+const dateInput = document.getElementById('date');
+const timeInput = document.getElementById('time');
+const commentInput = document.getElementById('comment');
+const submitButton = document.getElementById('submit');
 const statusEl = document.getElementById('status');
 
 if (tg) {
@@ -12,35 +17,46 @@ if (tg) {
   if (user) {
     const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
     userInfoEl.textContent = `Вы: ${name} (@${user.username || 'без username'})`;
+    if (!nameInput.value) {
+      nameInput.value = name;
+    }
   } else {
     userInfoEl.textContent = 'Не удалось получить информацию о пользователе.';
   }
 } else {
   userInfoEl.textContent =
-    'Это веб‑страница открыта не из Telegram. Откройте её как Web App, чтобы видеть данные пользователя.';
+    'Эта страница открыта не из Telegram. Откройте её как Web App, чтобы заявка ушла боту.';
 }
 
-sendButton.addEventListener('click', () => {
-  const text = messageInput.value.trim();
-  if (!text) {
-    statusEl.textContent = 'Введите сообщение, чтобы отправить его боту.';
+submitButton.addEventListener('click', () => {
+  const name = nameInput.value.trim();
+  const phone = phoneInput.value.trim();
+  const service = serviceSelect.value;
+  const date = dateInput.value;
+  const time = timeInput.value;
+  const comment = commentInput.value.trim();
+
+  if (!name || !phone || !date || !time) {
+    statusEl.textContent = 'Заполните минимум имя, телефон, дату и время.';
     return;
   }
 
   if (!tg) {
     statusEl.textContent =
-      'Telegram WebApp API недоступен (страница открыта не из Telegram). Сообщение не будет отправлено.';
+      'Telegram WebApp API недоступен (страница открыта не из Telegram). Заявка не будет отправлена.';
     return;
   }
 
-  tg.sendData(
-    JSON.stringify({
-      type: 'form_message',
-      text,
-      sentAt: new Date().toISOString(),
-    })
-  );
+  const payload = {
+    type: 'manicure_booking',
+    name,
+    phone,
+    service,
+    date,
+    time,
+    comment,
+  };
 
-  statusEl.textContent = 'Сообщение отправлено в бота. Можете закрыть мини‑приложение.';
+  tg.sendData(JSON.stringify(payload));
+  statusEl.textContent = 'Заявка отправлена боту. Можете закрыть приложение.';
 });
-
