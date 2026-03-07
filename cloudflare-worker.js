@@ -159,8 +159,16 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
         `⏰ Время: ${data.time || '—'}\n` +
         (data.comment ? `💬 Коммент: ${data.comment}` : '');
 
-      // Клиенту — подтверждение
-      await sendMessage(apiUrl, chatId, 'Заявка отправлена мастеру. Он свяжется с вами для подтверждения!');
+      // Клиенту — подтверждение с деталями записи
+      const confirmText =
+        '✅ Заявка отправлена мастеру.\n\n' +
+        '📋 Вы записались:\n' +
+        `✨ Услуга: ${data.service || '—'}\n` +
+        `📅 Дата: ${data.date || '—'}\n` +
+        `⏰ Время: ${data.time || '—'}\n` +
+        (data.comment ? `💬 Пожелание: ${data.comment}\n\n` : '\n') +
+        'Мастер свяжется с вами для подтверждения.';
+      await sendMessage(apiUrl, chatId, confirmText);
 
       // В группу: сначала в тему (если есть), иначе в General (thread 1); если не вышло — без темы (группа без Topics)
       let res = await sendMessage(apiUrl, FORUM_CHAT_ID, summary, {
