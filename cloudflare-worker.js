@@ -85,10 +85,11 @@ async function sendStartMessage(apiUrl, chatId, webAppUrl) {
     'Привет! Я бот для записи и общения с мастером.\n\n' +
     'Нажми кнопку ниже, чтобы открыть приложение для записи на маникюр.';
 
+  // Inline-кнопка сразу под сообщением (не внизу экрана)
   const replyMarkup =
     webAppUrl && webAppUrl.startsWith('https://')
       ? {
-          keyboard: [
+          inline_keyboard: [
             [
               {
                 text: '💅 Записаться',
@@ -96,8 +97,6 @@ async function sendStartMessage(apiUrl, chatId, webAppUrl) {
               },
             ],
           ],
-          resize_keyboard: true,
-          persistent: true,
         }
       : undefined;
 
