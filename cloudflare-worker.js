@@ -37,8 +37,8 @@ export default {
         return new Response('OK');
       }
 
-      // Обычный текст клиента → в его тему
-      if (update.message.text) {
+      // Обычный текст клиента → в его тему (только если тема есть)
+      if (update.message.text && threadId) {
         const from = update.message.from;
         const prefix = `👤 ${from.first_name || ''}${from.last_name ? ' ' + from.last_name : ''} (id ${from.id})\n\n`;
 
@@ -126,8 +126,12 @@ async function ensureClientThread(apiUrl, store, from, chatId) {
 
   const data = await resp.json();
   if (!data.ok) {
-    // Если не удалось создать тему, просто продолжаем без маршрутизации
-    await sendMessage(apiUrl, chatId, 'Не удалось создать тему для общения с менеджером.');
+    await sendMessage(
+      apiUrl,
+      chatId,
+      'Не удалось создать тему в группе.\n\n' +
+        'Проверьте: в группе включены «Темы» (Topics) и бот добавлен как администратор с правом «Управление темами».'
+    );
     return undefined;
   }
 
@@ -138,9 +142,6 @@ async function ensureClientThread(apiUrl, store, from, chatId) {
   return threadId;
 }
 
-// ID темы "General" в группе-форуме (если нет своей темы у клиента — шлём сюда)
-const GENERAL_THREAD_ID = 1;
-
 async function handleWebAppData(apiUrl, store, message, threadId) {
   const chatId = message.chat.id;
   const rawData = message.web_app_data.data;
@@ -149,7 +150,6 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
     const data = JSON.parse(rawData);
 
     if (data.type === 'manicure_booking') {
-      // Без Markdown, чтобы символы в имени/телефоне не ломали сообщение
       const summary =
         '✅ Новая запись!\n\n' +
         `👤 Имя: ${data.name || '—'}\n` +
@@ -162,11 +162,15 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
       // Клиенту — подтверждение
       await sendMessage(apiUrl, chatId, 'Заявка отправлена мастеру. Он свяжется с вами для подтверждения!');
 
-      // В группу менеджеров — всегда (в тему клиента или в General)
-      const targetThreadId = threadId || GENERAL_THREAD_ID;
-      await sendMessage(apiUrl, FORUM_CHAT_ID, summary, {
-        message_thread_id: targetThreadId,
+      // В группу: сначала в тему (если есть), иначе в General (thread 1); если не вышло — без темы (группа без Topics)
+      let res = await sendMessage(apiUrl, FORUM_CHAT_ID, summary, {
+        message_thread_id: threadId || 1,
       });
+      let resData = await res.json();
+      if (!resData.ok) {
+        res = await sendMessage(apiUrl, FORUM_CHAT_ID, summary);
+        resData = await res.json();
+      }
     }
   } catch (e) {
     await sendMessage(apiUrl, chatId, 'Ошибка при чтении данных из приложения.');
