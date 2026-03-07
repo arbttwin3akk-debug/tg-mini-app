@@ -138,6 +138,9 @@ async function ensureClientThread(apiUrl, store, from, chatId) {
   return threadId;
 }
 
+// ID темы "General" в группе-форуме (если нет своей темы у клиента — шлём сюда)
+const GENERAL_THREAD_ID = 1;
+
 async function handleWebAppData(apiUrl, store, message, threadId) {
   const chatId = message.chat.id;
   const rawData = message.web_app_data.data;
@@ -146,35 +149,24 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
     const data = JSON.parse(rawData);
 
     if (data.type === 'manicure_booking') {
+      // Без Markdown, чтобы символы в имени/телефоне не ломали сообщение
       const summary =
-        `✅ *Новая запись!*\n\n` +
-        `👤 *Имя:* ${data.name}\n` +
-        `📞 *Телефон:* ${data.phone}\n` +
-        `✨ *Услуга:* ${data.service}\n` +
-        `📅 *Дата:* ${data.date}\n` +
-        `⏰ *Время:* ${data.time}\n` +
-        (data.comment ? `💬 *Коммент:* ${data.comment}` : '');
+        '✅ Новая запись!\n\n' +
+        `👤 Имя: ${data.name || '—'}\n` +
+        `📞 Телефон: ${data.phone || '—'}\n` +
+        `✨ Услуга: ${data.service || '—'}\n` +
+        `📅 Дата: ${data.date || '—'}\n` +
+        `⏰ Время: ${data.time || '—'}\n` +
+        (data.comment ? `💬 Коммент: ${data.comment}` : '');
 
-      // Отправляем клиенту подтверждение
+      // Клиенту — подтверждение
       await sendMessage(apiUrl, chatId, 'Заявка отправлена мастеру. Он свяжется с вами для подтверждения!');
 
-      // И в тему менеджеров
-      if (threadId) {
-        const resp = await fetch(`${apiUrl}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: FORUM_CHAT_ID,
-            message_thread_id: threadId,
-            text: summary,
-            parse_mode: 'Markdown',
-          }),
-        });
-
-        const resData = await resp.json();
-        // Можно будет закреплять сообщение с записью, если нужно, по resData.result.message_id
-        void resData;
-      }
+      // В группу менеджеров — всегда (в тему клиента или в General)
+      const targetThreadId = threadId || GENERAL_THREAD_ID;
+      await sendMessage(apiUrl, FORUM_CHAT_ID, summary, {
+        message_thread_id: targetThreadId,
+      });
     }
   } catch (e) {
     await sendMessage(apiUrl, chatId, 'Ошибка при чтении данных из приложения.');
