@@ -1,0 +1,13 @@
+# Cloudflare Worker для Telegram-бота (деплой: npm run deploy)
+name = "tg-bot-worker"
+main = "cloudflare-worker.js"
+compatibility_date = "2024-01-01"
+
+# Переменные BOT_TOKEN и WEB_APP_URL задаются один раз через:
+#   npx wrangler secret put BOT_TOKEN
+#   npx wrangler secret put WEB_APP_URL
+
+# KV для связки клиент ↔ тема в группе. id возьми в Cloudflare: Workers & Pages → KV → своё пространство имён.
+[[kv_namespaces]]
+binding = "CLIENT_THREADS"
+id = "PASTE_YOUR_KV_NAMESPACE_ID"
