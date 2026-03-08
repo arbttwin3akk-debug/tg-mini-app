@@ -125,13 +125,16 @@
   <script>
     const tg = window.Telegram?.WebApp || {};
     const btn = document.getElementById('mainBtn');
-    // Важно: при Reply Keyboard initData пустой! sendData доступен только в Telegram.
     const isTelegram = typeof tg.sendData === 'function';
+    const params = new URLSearchParams(location.search);
+    const canHttp = params.get('uid') && (params.get('api') || '').replace(/\/$/, '').startsWith('https://');
+    const canSubmit = canHttp || isTelegram;
 
-    if (tg.initData || isTelegram) {
-      tg.expand();
+    if (tg.initData || isTelegram || canHttp) {
+      tg.expand && tg.expand();
       if (tg.colorScheme === 'dark') document.body.classList.add('tg-dark');
-    } else {
+    }
+    if (!canSubmit) {
       document.getElementById('browserNotice').style.display = 'block';
     }
 
