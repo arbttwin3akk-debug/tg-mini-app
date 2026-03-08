@@ -46,6 +46,12 @@ export default {
     const apiUrl = `https://api.telegram.org/bot${token}`;
 
     try {
+      // Нажатия на inline-кнопки (отмена/перенос заказа)
+      if (update?.callback_query) {
+        await handleCallbackQuery(apiUrl, store, update.callback_query);
+        return new Response('OK');
+      }
+
       // Сообщения из приватного чата с клиентом
       if (update?.message?.chat?.type === 'private') {
       const chatId = update.message.chat.id;
@@ -281,7 +287,33 @@ async function handleBookingPost(request, env) {
     `⏰ Время: ${data.time || '—'}\n` +
     (data.comment ? `💬 Пожелание: ${data.comment}\n\n` : '\n') +
     'Мастер свяжется с вами для подтверждения.';
-  await sendMessage(apiUrl, uid, confirmText);
+
+  const ref = `b_${uid}_${Date.now()}`;
+  const bookingData = {
+    uid,
+    name: data.name || '—',
+    phone: data.phone || '—',
+    service: data.service || '—',
+    date: data.date || '—',
+    time: data.time || '—',
+    comment: data.comment || '',
+    threadId: threadId || null,
+  };
+  await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 86400 });
+
+  const replyMarkup = {
+    inline_keyboard: [[
+      { text: '❌ Отменить заказ', callback_data: `cancel_${ref}` },
+      { text: '🔄 Перенести заказ', callback_data: `resched_${ref}` },
+    ]],
+  };
+  const confirmRes = await sendMessage(apiUrl, uid, confirmText, { reply_markup: replyMarkup });
+  const confirmJson = await confirmRes.json();
+  if (confirmJson.ok) {
+    bookingData.confirmMsgId = confirmJson.result.message_id;
+    bookingData.confirmChatId = uid;
+    await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 86400 });
+  }
 
   return jsonResponse({ ok: true, groupOk }, 200);
 }
@@ -407,7 +439,7 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
     }
   }
 
-  // 2. Клиенту подтверждение
+  // 2. Клиенту подтверждение с кнопками Отменить/Перенести
   const confirmText =
     '✅ Заявка отправлена мастеру.\n\n' +
     '📋 Вы записались:\n' +
@@ -416,7 +448,33 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
     `⏰ Время: ${data.time || '—'}\n` +
     (data.comment ? `💬 Пожелание: ${data.comment}\n\n` : '\n') +
     'Мастер свяжется с вами для подтверждения.';
-  await sendMessage(apiUrl, chatId, confirmText);
+
+  const ref = `b_${chatId}_${Date.now()}`;
+  const bookingData = {
+    uid: chatId,
+    name: data.name || '—',
+    phone: data.phone || '—',
+    service: data.service || '—',
+    date: data.date || '—',
+    time: data.time || '—',
+    comment: data.comment || '',
+    threadId: threadId || null,
+  };
+  await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 86400 });
+
+  const replyMarkup = {
+    inline_keyboard: [[
+      { text: '❌ Отменить заказ', callback_data: `cancel_${ref}` },
+      { text: '🔄 Перенести заказ', callback_data: `resched_${ref}` },
+    ]],
+  };
+  const confirmRes = await sendMessage(apiUrl, chatId, confirmText, { reply_markup: replyMarkup });
+  const confirmJson = await confirmRes.json();
+  if (confirmJson.ok) {
+    bookingData.confirmMsgId = confirmJson.result.message_id;
+    bookingData.confirmChatId = chatId;
+    await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 86400 });
+  }
 
   if (!groupOk) {
     await sendMessage(
@@ -454,11 +512,143 @@ async function sendMessage(apiUrl, chatId, text, extra = {}) {
     text,
     ...extra,
   };
-
   return fetch(`${apiUrl}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+}
+
+async function editMessage(apiUrl, chatId, messageId, text, replyMarkup = null) {
+  const body = {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    ...(replyMarkup !== undefined && { reply_markup: replyMarkup }),
+  };
+  return fetch(`${apiUrl}/editMessageText`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+async function answerCallbackQuery(apiUrl, callbackQueryId, text = null, showAlert = false) {
+  const body = {
+    callback_query_id: callbackQueryId,
+    ...(text && { text }),
+    ...(showAlert && { show_alert: true }),
+  };
+  return fetch(`${apiUrl}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+async function handleCallbackQuery(apiUrl, store, cq) {
+  const id = cq.id;
+  const data = cq.data || '';
+  const chatId = cq.message?.chat?.id;
+  const msgId = cq.message?.message_id;
+
+  if (data.startsWith('cancel_ok_')) {
+    const ref = data.slice(10);
+    const raw = await store?.get(`booking_${ref}`);
+    if (!raw) {
+      await answerCallbackQuery(apiUrl, id, 'Запись не найдена или устарела.', true);
+      return;
+    }
+    const b = JSON.parse(raw);
+    const notify =
+      `❌ Клиент отменил заказ\n\n` +
+      `👤 ${b.name} (id ${b.uid})\n` +
+      `📞 ${b.phone}\n` +
+      `Услуга: ${b.service}\n` +
+      `Дата: ${b.date} • ${b.time}`;
+    const opts = b.threadId ? { message_thread_id: b.threadId } : {};
+    await sendMessage(apiUrl, FORUM_CHAT_ID, notify, opts);
+    if (b.confirmMsgId && b.confirmChatId) {
+      const origText = `✅ Заявка отправлена мастеру.\n\n📋 Вы записались:\n✨ Услуга: ${b.service}\n📅 Дата: ${b.date}\n⏰ Время: ${b.time}\n\n❌ Запись отменена по вашей просьбе.`;
+      await editMessage(apiUrl, b.confirmChatId, b.confirmMsgId, origText, { inline_keyboard: [] });
+    }
+    await editMessage(apiUrl, chatId, msgId, '✓ Запись отменена', { inline_keyboard: [] });
+    await answerCallbackQuery(apiUrl, id, 'Запись отменена');
+    return;
+  }
+
+  if (data.startsWith('cancel_no') || data.startsWith('resched_no')) {
+    await editMessage(apiUrl, chatId, msgId, cq.message.text || 'Действие отменено.', { inline_keyboard: [] });
+    await answerCallbackQuery(apiUrl, id);
+    return;
+  }
+
+  if (data.startsWith('resched_ok_')) {
+    const ref = data.slice(10);
+    const raw = await store?.get(`booking_${ref}`);
+    if (!raw) {
+      await answerCallbackQuery(apiUrl, id, 'Запись не найдена или устарела.', true);
+      return;
+    }
+    const b = JSON.parse(raw);
+    const notify =
+      `🔄 Клиент хочет перенести заказ\n\n` +
+      `👤 ${b.name} (id ${b.uid})\n` +
+      `📞 ${b.phone}\n` +
+      `Услуга: ${b.service}\n` +
+      `Было: ${b.date} • ${b.time}\n\n` +
+      `Мастеру нужно связаться для уточнения новой даты.`;
+    const opts = b.threadId ? { message_thread_id: b.threadId } : {};
+    await sendMessage(apiUrl, FORUM_CHAT_ID, notify, opts);
+    if (b.confirmMsgId && b.confirmChatId) {
+      const origText = `✅ Заявка отправлена мастеру.\n\n📋 Вы записались:\n✨ Услуга: ${b.service}\n📅 Дата: ${b.date}\n⏰ Время: ${b.time}\n\n🔄 Запрос на перенос отправлен. Мастер свяжется для уточнения новой даты.`;
+      await editMessage(apiUrl, b.confirmChatId, b.confirmMsgId, origText, { inline_keyboard: [] });
+    }
+    await editMessage(apiUrl, chatId, msgId, '✓ Запрос отправлен мастеру', { inline_keyboard: [] });
+    await answerCallbackQuery(apiUrl, id, 'Запрос отправлен мастеру');
+    return;
+  }
+
+  if (data.startsWith('cancel_')) {
+    const ref = data.slice(7);
+    const raw = await store?.get(`booking_${ref}`);
+    if (!raw) {
+      await answerCallbackQuery(apiUrl, id, 'Запись не найдена.', true);
+      return;
+    }
+    const b = JSON.parse(raw);
+    const confirmText = 'Подтвердите отмену записи?';
+    const kb = {
+      inline_keyboard: [
+        [{ text: 'Да, отменить', callback_data: `cancel_ok_${ref}` }],
+        [{ text: 'Нет', callback_data: 'cancel_no' }],
+      ],
+    };
+    await sendMessage(apiUrl, chatId, confirmText, { reply_markup: kb });
+    await answerCallbackQuery(apiUrl, id);
+    return;
+  }
+
+  if (data.startsWith('resched_')) {
+    const ref = data.slice(8);
+    const raw = await store?.get(`booking_${ref}`);
+    if (!raw) {
+      await answerCallbackQuery(apiUrl, id, 'Запись не найдена.', true);
+      return;
+    }
+    const confirmText =
+      'Подтвердите перенос записи?\n\nМастер свяжется с вами для уточнения новой даты и времени.';
+    const kb = {
+      inline_keyboard: [
+        [{ text: 'Да, перенести', callback_data: `resched_ok_${ref}` }],
+        [{ text: 'Нет', callback_data: 'resched_no' }],
+      ],
+    };
+    await sendMessage(apiUrl, chatId, confirmText, { reply_markup: kb });
+    await answerCallbackQuery(apiUrl, id);
+    return;
+  }
+
+  await answerCallbackQuery(apiUrl, id);
 }
 
