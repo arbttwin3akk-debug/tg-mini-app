@@ -91,6 +91,25 @@
       box-sizing: border-box;
     }
     .row { display: flex; gap: 10px; }
+    .phone-wrap {
+      display: flex;
+      align-items: center;
+      background: var(--input-bg);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .phone-prefix {
+      padding: 12px 12px 12px 14px;
+      color: var(--hint-color);
+      font-size: 16px;
+      user-select: none;
+    }
+    .phone-wrap input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      min-width: 0;
+    }
     .btn-submit {
       width: 100%;
       padding: 16px;
@@ -135,7 +154,10 @@
       </div>
       <div class="form-group">
         <label>Телефон</label>
-        <input type="tel" id="phoneNails" placeholder="+7 (___) ___ - __ - __">
+        <div class="phone-wrap">
+          <span class="phone-prefix">+7</span>
+          <input type="tel" id="phoneNails" placeholder="(___) ___-__-__" inputmode="numeric" maxlength="11">
+        </div>
       </div>
       <div class="form-group">
         <label>Услуга</label>
@@ -169,7 +191,10 @@
       </div>
       <div class="form-group">
         <label>Телефон</label>
-        <input type="tel" id="phoneHaircut" placeholder="+7 (___) ___ - __ - __">
+        <div class="phone-wrap">
+          <span class="phone-prefix">+7</span>
+          <input type="tel" id="phoneHaircut" placeholder="(___) ___-__-__" inputmode="numeric" maxlength="11">
+        </div>
       </div>
       <div class="form-group">
         <label>Услуга</label>
@@ -224,6 +249,13 @@
       });
     });
 
+    function formatPhone(val) {
+      const d = (val || '').replace(/\D/g, '');
+      if (!d) return '';
+      const num = (d.startsWith('7') || d.startsWith('8') ? d.slice(1) : d).slice(0, 10);
+      return num ? '+7' + num : '';
+    }
+
     document.getElementById('mainBtn').addEventListener('click', async () => {
       const activeTab = document.querySelector('.tab.active').dataset.tab;
       const suffix = activeTab === 'nails' ? 'Nails' : 'Haircut';
@@ -232,7 +264,7 @@
       const data = {
         type,
         name: document.getElementById('name' + suffix).value?.trim() || '',
-        phone: document.getElementById('phone' + suffix).value?.trim() || '',
+        phone: formatPhone(document.getElementById('phone' + suffix).value) || '',
         service: document.getElementById('service' + suffix).value || '',
         date: document.getElementById('date' + suffix).value || '',
         time: document.getElementById('time' + suffix).value || '',
