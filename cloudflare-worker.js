@@ -561,25 +561,26 @@ async function handleCallbackQuery(apiUrl, store, cq) {
     return null;
   }
 
-  function parseRef(ref) {
-    const parts = String(ref || '').split('_');
-    if (parts.length >= 2 && /^\d+$/.test(parts[1])) return { uid: parts[1] };
-    return null;
-  }
+  const fromId = cq.from?.id;
 
   if (data.startsWith('cancel_ok_')) {
     const ref = data.slice(10);
     let raw = await getBooking(ref);
     let b = raw ? JSON.parse(raw) : null;
+    if (!b && fromId) {
+      const userName = [cq.from?.first_name, cq.from?.last_name].filter(Boolean).join(' ').trim() || '—';
+      const userHandle = cq.from?.username ? `@${cq.from.username}` : '';
+      const threadId = fromId ? await store?.get(`user_${fromId}`) : null;
+      const notify =
+        `❌ Клиент отменил заказ\n\n` +
+        `👤 ${userName} (id ${fromId}) ${userHandle}\n` +
+        `⚠️ Детали из кэша недоступны. Свяжитесь с клиентом для уточнения.`;
+      await sendMessage(apiUrl, FORUM_CHAT_ID, notify, threadId ? { message_thread_id: Number(threadId) } : {});
+      await editMessage(apiUrl, chatId, msgId, '✓ Запись отменена', { inline_keyboard: [] });
+      await answerCallbackQuery(apiUrl, id, 'Запись отменена');
+      return;
+    }
     if (!b) {
-      const parsed = parseRef(ref);
-      if (parsed) {
-        const notify = `❌ Клиент отменил заказ\n\n👤 ID: ${parsed.uid}\n⚠️ Детали из кэша недоступны. Свяжитесь с клиентом для уточнения.`;
-        await sendMessage(apiUrl, FORUM_CHAT_ID, notify);
-        await editMessage(apiUrl, chatId, msgId, '✓ Запись отменена', { inline_keyboard: [] });
-        await answerCallbackQuery(apiUrl, id, 'Запись отменена');
-        return;
-      }
       await answerCallbackQuery(apiUrl, id, 'Запись не найдена или устарела.', true);
       return;
     }
@@ -610,15 +611,20 @@ async function handleCallbackQuery(apiUrl, store, cq) {
     const ref = data.slice(10);
     let raw = await getBooking(ref);
     let b = raw ? JSON.parse(raw) : null;
+    if (!b && fromId) {
+      const userName = [cq.from?.first_name, cq.from?.last_name].filter(Boolean).join(' ').trim() || '—';
+      const userHandle = cq.from?.username ? `@${cq.from.username}` : '';
+      const threadId = fromId ? await store?.get(`user_${fromId}`) : null;
+      const notify =
+        `🔄 Клиент хочет перенести заказ\n\n` +
+        `👤 ${userName} (id ${fromId}) ${userHandle}\n` +
+        `⚠️ Детали из кэша недоступны. Свяжитесь для уточнения новой даты.`;
+      await sendMessage(apiUrl, FORUM_CHAT_ID, notify, threadId ? { message_thread_id: Number(threadId) } : {});
+      await editMessage(apiUrl, chatId, msgId, '✓ Запрос отправлен мастеру', { inline_keyboard: [] });
+      await answerCallbackQuery(apiUrl, id, 'Запрос отправлен мастеру');
+      return;
+    }
     if (!b) {
-      const parsed = parseRef(ref);
-      if (parsed) {
-        const notify = `🔄 Клиент хочет перенести заказ\n\n👤 ID: ${parsed.uid}\n⚠️ Детали из кэша недоступны. Свяжитесь для уточнения новой даты.`;
-        await sendMessage(apiUrl, FORUM_CHAT_ID, notify);
-        await editMessage(apiUrl, chatId, msgId, '✓ Запрос отправлен мастеру', { inline_keyboard: [] });
-        await answerCallbackQuery(apiUrl, id, 'Запрос отправлен мастеру');
-        return;
-      }
       await answerCallbackQuery(apiUrl, id, 'Запись не найдена или устарела.', true);
       return;
     }
