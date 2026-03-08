@@ -110,6 +110,53 @@
       border: none;
       min-width: 0;
     }
+    .photo-upload { margin-top: 5px; }
+    .photo-upload-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 16px;
+      border-radius: 10px;
+      background: var(--input-bg);
+      color: var(--hint-color);
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .photo-upload input[type="file"] { display: none; }
+    .photo-previews {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .photo-thumb {
+      position: relative;
+      width: 72px;
+      height: 72px;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .photo-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .photo-thumb .remove-photo {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      border: none;
+      font-size: 14px;
+      line-height: 22px;
+      text-align: center;
+      cursor: pointer;
+      padding: 0;
+    }
     .btn-submit {
       width: 100%;
       padding: 16px;
@@ -182,6 +229,16 @@
         <label>Комментарий (необязательно)</label>
         <input type="text" id="commentNails" placeholder="Пожелания, особые пожелания">
       </div>
+      <div class="form-group">
+        <label>Фото (необязательно)</label>
+        <div class="photo-upload">
+          <label class="photo-upload-label">
+            📷 Добавить фото
+            <input type="file" id="photosNails" accept="image/*" multiple>
+          </label>
+        </div>
+        <div class="photo-previews" id="previewNails"></div>
+      </div>
     </div>
 
     <div id="tab-haircut" class="tab-content">
@@ -220,6 +277,16 @@
       <div class="form-group">
         <label>Комментарий (необязательно)</label>
         <input type="text" id="commentHaircut" placeholder="Пожелания к стрижке">
+      </div>
+      <div class="form-group">
+        <label>Фото (необязательно)</label>
+        <div class="photo-upload">
+          <label class="photo-upload-label">
+            📷 Добавить фото
+            <input type="file" id="photosHaircut" accept="image/*" multiple>
+          </label>
+        </div>
+        <div class="photo-previews" id="previewHaircut"></div>
       </div>
     </div>
 
@@ -265,6 +332,36 @@
     }
     document.querySelectorAll('#phoneNails, #phoneHaircut').forEach(phoneMask);
 
+    const photoFiles = { Nails: [], Haircut: [] };
+    function setupPhotoInput(suffix) {
+      const input = document.getElementById('photos' + suffix);
+      const preview = document.getElementById('preview' + suffix);
+      input.addEventListener('change', () => {
+        for (const f of input.files) {
+          if (photoFiles[suffix].length >= 10) break;
+          photoFiles[suffix].push(f);
+          const div = document.createElement('div');
+          div.className = 'photo-thumb';
+          const img = document.createElement('img');
+          img.src = URL.createObjectURL(f);
+          const btn = document.createElement('button');
+          btn.className = 'remove-photo';
+          btn.textContent = '×';
+          btn.onclick = () => {
+            const idx = photoFiles[suffix].indexOf(f);
+            if (idx > -1) photoFiles[suffix].splice(idx, 1);
+            div.remove();
+          };
+          div.appendChild(img);
+          div.appendChild(btn);
+          preview.appendChild(div);
+        }
+        input.value = '';
+      });
+    }
+    setupPhotoInput('Nails');
+    setupPhotoInput('Haircut');
+
     function formatPhone(val) {
       const d = (val || '').replace(/\D/g, '').slice(0, 10);
       return d ? '+7' + d : '';
@@ -298,11 +395,20 @@
         btn.disabled = true;
         btn.textContent = 'Отправка...';
         try {
-          const res = await fetch(apiBase + '/booking', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uid: Number(uid), ...data }),
-          });
+          const photos = photoFiles[suffix] || [];
+          let res;
+          if (photos.length > 0) {
+            const fd = new FormData();
+            fd.append('json', JSON.stringify({ uid: Number(uid), ...data }));
+            photos.forEach((f, i) => fd.append('photo' + i, f));
+            res = await fetch(apiBase + '/booking', { method: 'POST', body: fd });
+          } else {
+            res = await fetch(apiBase + '/booking', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ uid: Number(uid), ...data }),
+            });
+          }
           const json = await res.json();
           if (json.ok) {
             if (tg.close) tg.close();

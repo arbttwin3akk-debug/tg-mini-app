@@ -217,16 +217,26 @@ async function handleBookingPost(request, env) {
     return jsonResponse({ ok: false, error: 'BOT_TOKEN not set' }, 500);
   }
 
-  let body;
-  try {
-    body = await request.json();
-  } catch (e) {
-    return jsonResponse({ ok: false, error: 'Invalid JSON' }, 400);
+  let data, photos = [];
+  const ct = (request.headers.get('content-type') || '').toLowerCase();
+  if (ct.includes('multipart/form-data')) {
+    const fd = await request.formData();
+    const jsonStr = fd.get('json');
+    if (!jsonStr) return jsonResponse({ ok: false, error: 'Missing json field' }, 400);
+    try { data = JSON.parse(jsonStr); } catch (e) { return jsonResponse({ ok: false, error: 'Invalid JSON in json field' }, 400); }
+    for (const [key, val] of fd.entries()) {
+      if (key.startsWith('photo') && val instanceof File && val.size > 0) {
+        photos.push(val);
+      }
+    }
+  } else {
+    let body;
+    try { body = await request.json(); } catch (e) { return jsonResponse({ ok: false, error: 'Invalid JSON' }, 400); }
+    data = body.data || body;
   }
 
-  const data = body.data || body;
-  const uid = Number(body.uid ?? data.uid);
-  const bookingType = data.type || body.type;
+  const uid = Number(data.uid);
+  const bookingType = data.type;
   const validTypes = ['manicure_booking', 'haircut_booking'];
   if (!uid || !validTypes.includes(bookingType)) {
     return jsonResponse({ ok: false, error: 'Invalid payload' }, 400);
@@ -263,9 +273,11 @@ async function handleBookingPost(request, env) {
     `   • Услуга: ${data.service || '—'}\n` +
     `   • Дата: ${data.date || '—'}\n` +
     `   • Время: ${data.time || '—'}\n` +
-    (data.comment ? `   • Коммент: ${data.comment}` : '');
+    (data.comment ? `   • Коммент: ${data.comment}` : '') +
+    (photos.length > 0 ? `\n   • 📸 Фото: ${photos.length} шт.` : '');
 
   let groupOk = false;
+  let usedThreadOpts = {};
   for (const opts of [
     { message_thread_id: threadId || 1 },
     { message_thread_id: 1 },
@@ -275,8 +287,13 @@ async function handleBookingPost(request, env) {
     const resData = await res.json();
     if (resData.ok) {
       groupOk = true;
+      usedThreadOpts = opts;
       break;
     }
+  }
+
+  if (photos.length > 0 && groupOk) {
+    await sendPhotosToChat(apiUrl, FORUM_CHAT_ID, photos, usedThreadOpts);
   }
 
   const confirmText =
@@ -286,6 +303,7 @@ async function handleBookingPost(request, env) {
     `📅 Дата: ${data.date || '—'}\n` +
     `⏰ Время: ${data.time || '—'}\n` +
     (data.comment ? `💬 Пожелание: ${data.comment}\n\n` : '\n') +
+    (photos.length > 0 ? `📸 Фото: ${photos.length} шт.\n\n` : '') +
     'Мастер свяжется с вами для подтверждения.';
 
   const ref = `b_${uid}_${Date.now().toString(36)}`;
@@ -504,6 +522,28 @@ async function getAllRecordingClientIds(store) {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+async function sendPhotosToChat(apiUrl, chatId, photos, extra = {}) {
+  if (photos.length === 1) {
+    const fd = new FormData();
+    fd.append('chat_id', String(chatId));
+    fd.append('photo', photos[0]);
+    if (extra.message_thread_id) fd.append('message_thread_id', String(extra.message_thread_id));
+    await fetch(`${apiUrl}/sendPhoto`, { method: 'POST', body: fd });
+  } else {
+    const media = [];
+    const fd = new FormData();
+    fd.append('chat_id', String(chatId));
+    if (extra.message_thread_id) fd.append('message_thread_id', String(extra.message_thread_id));
+    for (let i = 0; i < Math.min(photos.length, 10); i++) {
+      const key = 'photo' + i;
+      fd.append(key, photos[i]);
+      media.push({ type: 'photo', media: 'attach://' + key });
+    }
+    fd.append('media', JSON.stringify(media));
+    await fetch(`${apiUrl}/sendMediaGroup`, { method: 'POST', body: fd });
+  }
 }
 
 async function sendMessage(apiUrl, chatId, text, extra = {}) {
