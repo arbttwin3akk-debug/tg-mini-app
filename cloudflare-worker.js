@@ -81,6 +81,23 @@ export default {
       return new Response('OK');
     }
 
+    // Посты из канала General (если задан GENERAL_CHANNEL_ID)
+    const generalChannelId = env.GENERAL_CHANNEL_ID?.trim();
+    if (generalChannelId && update?.channel_post?.chat && String(update.channel_post.chat.id) === generalChannelId) {
+      const msg = update.channel_post;
+      const text = (msg.text || msg.caption || '').trim();
+      if (text) {
+        const userIds = await getAllRecordingClientIds(store);
+        for (const uid of userIds) {
+          const res = await sendMessage(apiUrl, uid, text);
+          const data = await res.json().catch(() => ({}));
+          if (!data.ok && data.error_code === 429) await sleep(1000);
+          await sleep(120);
+        }
+      }
+      return new Response('OK');
+    }
+
     // Сообщения из менеджерской группы (форум)
     if (update.message?.chat && String(update.message.chat.id) === FORUM_CHAT_ID) {
       const msg = update.message;
@@ -95,17 +112,19 @@ export default {
         return new Response('OK');
       }
 
-      // Сообщение в теме «Общее» с ссылками на каналы → рассылка всем клиентам записи
-      const generalThreadId = Number(env.GENERAL_THREAD_ID || '1');
-      const text = msg.text || msg.caption || '';
-      const hasChannelLinks = /t\.me\/|telegram\.me\//i.test(text);
-      if (threadId === generalThreadId && text && hasChannelLinks) {
+      // Сообщение в теме «Общее» → рассылка всем клиентам записи (с ссылками или любое, если BROADCAST_ANY)
+      const generalIds = (env.GENERAL_THREAD_ID || '1,2').split(',').map((s) => Number(s.trim())).filter(Boolean);
+      const isGeneralTopic = generalIds.length > 0 && generalIds.includes(Number(threadId));
+      const text = (msg.text || msg.caption || '').trim();
+      const hasChannelLinks = /t\.me\/|telegram\.me\/|https?:\/\//i.test(text);
+      const broadcastAny = (env.BROADCAST_ANY_MESSAGE || '').toLowerCase() === 'true';
+      if (isGeneralTopic && text && (hasChannelLinks || broadcastAny)) {
         const userIds = await getAllRecordingClientIds(store);
         for (const uid of userIds) {
-          try {
-            await sendMessage(apiUrl, uid, text);
-            await sleep(60);
-          } catch (_) {}
+          const res = await sendMessage(apiUrl, uid, text);
+          const data = await res.json().catch(() => ({}));
+          if (!data.ok && data.error_code === 429) await sleep(1000);
+          await sleep(120);
         }
         return new Response('OK');
       }
@@ -392,12 +411,14 @@ async function getAllRecordingClientIds(store) {
   const ids = new Set();
   let cursor;
   do {
-    const list = await store.list({ prefix: 'user_', limit: 1000, cursor });
-    for (const k of list.keys) {
-      const m = k.name.match(/^user_(\d+)$/);
+    const list = await store.list({ prefix: 'user_', limit: 1000, ...(cursor && { cursor }) });
+    const keys = list.keys || [];
+    for (const k of keys) {
+      const name = k.name ?? k.key ?? '';
+      const m = String(name).match(/^user_(\d+)$/);
       if (m) ids.add(Number(m[1]));
     }
-    cursor = list.list_complete ? undefined : list.cursor;
+    cursor = list.list_complete ? undefined : (list.cursor || null);
   } while (cursor);
   return [...ids];
 }
