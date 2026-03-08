@@ -1,9 +1,27 @@
-const FORUM_CHAT_ID = Number('-1003885716640'); // ID вашей закрытой группы с темами
+const FORUM_CHAT_ID = '-1003885716640'; // ID закрытой группы (строка — надёжнее для API)
 
 // Ключи в KV: user_<userId> -> threadId, thread_<threadId> -> userId
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
 export default {
   async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+
+    // CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: CORS_HEADERS });
+    }
+
+    // HTTP-заявка из Web App (надёжная альтернатива sendData)
+    if (request.method === 'POST' && url.pathname === '/booking') {
+      return handleBookingPost(request, env);
+    }
+
     if (request.method !== 'POST') {
       return new Response('OK');
     }
@@ -17,6 +35,7 @@ export default {
 
     const token = env.BOT_TOKEN;
     const webAppUrl = env.WEB_APP_URL;
+    const workerUrl = env.WORKER_PUBLIC_URL || '';
     const store = env.CLIENT_THREADS;
 
     if (!token) {
@@ -34,7 +53,7 @@ export default {
       // Обработка /start — сразу приветствие и выход (без создания темы)
       const msgText = (update.message.text || '').trim();
       if (msgText.toLowerCase().startsWith('/start')) {
-        await sendStartMessage(apiUrl, chatId, webAppUrl);
+        await sendStartMessage(apiUrl, chatId, webAppUrl, workerUrl);
         return new Response('OK');
       }
 
@@ -63,7 +82,7 @@ export default {
     }
 
     // Сообщения из менеджерской группы (форум)
-    if (update.message && update.message.chat && update.message.chat.id === FORUM_CHAT_ID) {
+    if (update.message?.chat && String(update.message.chat.id) === FORUM_CHAT_ID) {
       const msg = update.message;
       const threadId = msg.message_thread_id;
 
@@ -94,20 +113,25 @@ export default {
   },
 };
 
-async function sendStartMessage(apiUrl, chatId, webAppUrl) {
+async function sendStartMessage(apiUrl, chatId, webAppUrl, workerUrl) {
   const text =
     'Привет! Я бот для записи и общения с мастером.\n\n' +
     'Нажми кнопку ниже, чтобы открыть приложение для записи на маникюр.';
 
-  const url = webAppUrl && String(webAppUrl).trim();
-  const withButton = url && url.startsWith('https://');
-
+  let url = webAppUrl && String(webAppUrl).trim();
+  if (url && url.startsWith('https://')) {
+    const params = new URLSearchParams({ uid: String(chatId) });
+    if (workerUrl) params.set('api', workerUrl.trim());
+    url = url.replace(/\/?$/, '') + (url.includes('?') ? '&' : '?') + params.toString();
+  }
+  // Reply Keyboard нужен для sendData; uid+api — для HTTP fallback
   const body = {
     chat_id: chatId,
     text,
-    ...(withButton && {
+    ...(url && {
       reply_markup: {
-        inline_keyboard: [[{ text: '💅 Записаться', web_app: { url } }]],
+        keyboard: [[{ text: '💅 Записаться', web_app: { url } }]],
+        resize_keyboard: true,
       },
     }),
   };
@@ -118,13 +142,118 @@ async function sendStartMessage(apiUrl, chatId, webAppUrl) {
     body: JSON.stringify(body),
   });
   const data = await res.json();
-  if (!data.ok && withButton) {
+  if (!data.ok && body.reply_markup) {
     await fetch(`${apiUrl}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text }),
     });
   }
+}
+
+async function handleBookingPost(request, env) {
+  const token = env.BOT_TOKEN;
+  const store = env.CLIENT_THREADS;
+  if (!token) {
+    return jsonResponse({ ok: false, error: 'BOT_TOKEN not set' }, 500);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return jsonResponse({ ok: false, error: 'Invalid JSON' }, 400);
+  }
+
+  const data = body.data || body;
+  const uid = Number(body.uid ?? data.uid);
+  if (!uid || (data.type || body.type) !== 'manicure_booking') {
+    return jsonResponse({ ok: false, error: 'Invalid payload' }, 400);
+  }
+
+  const apiUrl = `https://api.telegram.org/bot${token}`;
+
+  // Получить имя пользователя из API (у нас только uid)
+  let userInfo = { id: uid, first_name: '', last_name: '', username: '' };
+  try {
+    const u = await fetch(`${apiUrl}/getChat?chat_id=${uid}`).then((r) => r.json());
+    if (u.ok) {
+      userInfo = { id: u.result.id, first_name: u.result.first_name || '', last_name: u.result.last_name || '', username: u.result.username || '' };
+    }
+  } catch (_) {}
+
+  const threadId = await ensureClientThreadByUserId(apiUrl, store, userInfo, uid);
+
+  const userName = [userInfo.first_name, userInfo.last_name].filter(Boolean).join(' ').trim() || '—';
+  const userHandle = userInfo.username ? `@${userInfo.username}` : 'не указан';
+  const submittedAt = new Date().toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'medium' });
+
+  const summary =
+    '✅ Новая запись!\n\n' +
+    '📱 Контакт в Telegram:\n' +
+    `   • ID: ${uid}\n` +
+    `   • Username: ${userHandle}\n` +
+    `   • Имя в ТГ: ${userName}\n` +
+    `   • Время заявки: ${submittedAt}\n\n` +
+    '📋 Детали записи:\n' +
+    `   • Имя: ${data.name || '—'}\n` +
+    `   • Телефон: ${data.phone || '—'}\n` +
+    `   • Услуга: ${data.service || '—'}\n` +
+    `   • Дата: ${data.date || '—'}\n` +
+    `   • Время: ${data.time || '—'}\n` +
+    (data.comment ? `   • Коммент: ${data.comment}` : '');
+
+  let groupOk = false;
+  for (const opts of [
+    { message_thread_id: threadId || 1 },
+    { message_thread_id: 1 },
+    {},
+  ]) {
+    const res = await sendMessage(apiUrl, FORUM_CHAT_ID, summary, opts);
+    const resData = await res.json();
+    if (resData.ok) {
+      groupOk = true;
+      break;
+    }
+  }
+
+  const confirmText =
+    '✅ Заявка отправлена мастеру.\n\n' +
+    '📋 Вы записались:\n' +
+    `✨ Услуга: ${data.service || '—'}\n` +
+    `📅 Дата: ${data.date || '—'}\n` +
+    `⏰ Время: ${data.time || '—'}\n` +
+    (data.comment ? `💬 Пожелание: ${data.comment}\n\n` : '\n') +
+    'Мастер свяжется с вами для подтверждения.';
+  await sendMessage(apiUrl, uid, confirmText);
+
+  return jsonResponse({ ok: true, groupOk }, 200);
+}
+
+function jsonResponse(obj, status = 200) {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+  });
+}
+
+async function ensureClientThreadByUserId(apiUrl, store, from, chatId) {
+  if (!store || !from) return undefined;
+  const existing = await store.get(`user_${from.id}`);
+  if (existing) return Number(existing);
+
+  const name = `${from.first_name || 'Клиент'}${from.last_name ? ' ' + from.last_name : ''} | ID: ${from.id}`;
+  const resp = await fetch(`${apiUrl}/createForumTopic`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: FORUM_CHAT_ID, name }),
+  });
+  const data = await resp.json();
+  if (!data.ok) return undefined;
+  const threadId = data.result.message_thread_id;
+  await store.put(`user_${from.id}`, String(threadId));
+  await store.put(`thread_${threadId}`, String(from.id));
+  return threadId;
 }
 
 async function ensureClientThread(apiUrl, store, from, chatId) {
@@ -168,60 +297,77 @@ async function ensureClientThread(apiUrl, store, from, chatId) {
 
 async function handleWebAppData(apiUrl, store, message, threadId) {
   const chatId = message.chat.id;
-  const rawData = message.web_app_data.data;
+  const rawData = message.web_app_data?.data || '';
   const from = message.from || {};
 
+  let data;
   try {
-    const data = JSON.parse(rawData);
-
-    if (data.type === 'manicure_booking') {
-      const userName = [from.first_name, from.last_name].filter(Boolean).join(' ').trim() || '—';
-      const userHandle = from.username ? `@${from.username}` : 'не указан';
-      const submittedAt = message.date
-        ? new Date(message.date * 1000).toLocaleString('ru-RU', {
-            dateStyle: 'short',
-            timeStyle: 'medium',
-          })
-        : '—';
-
-      const summary =
-        '✅ Новая запись!\n\n' +
-        '📱 Контакт в Telegram:\n' +
-        `   • ID: ${from.id || '—'}\n` +
-        `   • Username: ${userHandle}\n` +
-        `   • Имя в ТГ: ${userName}\n` +
-        `   • Время заявки: ${submittedAt}\n\n` +
-        '📋 Детали записи:\n' +
-        `   • Имя: ${data.name || '—'}\n` +
-        `   • Телефон: ${data.phone || '—'}\n` +
-        `   • Услуга: ${data.service || '—'}\n` +
-        `   • Дата: ${data.date || '—'}\n` +
-        `   • Время: ${data.time || '—'}\n` +
-        (data.comment ? `   • Коммент: ${data.comment}` : '');
-
-      // Клиенту — подтверждение с деталями записи
-      const confirmText =
-        '✅ Заявка отправлена мастеру.\n\n' +
-        '📋 Вы записались:\n' +
-        `✨ Услуга: ${data.service || '—'}\n` +
-        `📅 Дата: ${data.date || '—'}\n` +
-        `⏰ Время: ${data.time || '—'}\n` +
-        (data.comment ? `💬 Пожелание: ${data.comment}\n\n` : '\n') +
-        'Мастер свяжется с вами для подтверждения.';
-      await sendMessage(apiUrl, chatId, confirmText);
-
-      // В группу: сначала в тему (если есть), иначе в General (thread 1); если не вышло — без темы (группа без Topics)
-      let res = await sendMessage(apiUrl, FORUM_CHAT_ID, summary, {
-        message_thread_id: threadId || 1,
-      });
-      let resData = await res.json();
-      if (!resData.ok) {
-        res = await sendMessage(apiUrl, FORUM_CHAT_ID, summary);
-        resData = await res.json();
-      }
-    }
+    data = JSON.parse(rawData);
   } catch (e) {
-    await sendMessage(apiUrl, chatId, 'Ошибка при чтении данных из приложения.');
+    await sendMessage(apiUrl, chatId, 'Ошибка при чтении данных.');
+    return;
+  }
+
+  if (data.type !== 'manicure_booking') {
+    return;
+  }
+
+  const userName = [from.first_name, from.last_name].filter(Boolean).join(' ').trim() || '—';
+  const userHandle = from.username ? `@${from.username}` : 'не указан';
+  const submittedAt = message.date
+    ? new Date(message.date * 1000).toLocaleString('ru-RU', {
+        dateStyle: 'short',
+        timeStyle: 'medium',
+      })
+    : '—';
+
+  const summary =
+    '✅ Новая запись!\n\n' +
+    '📱 Контакт в Telegram:\n' +
+    `   • ID: ${from.id ?? '—'}\n` +
+    `   • Username: ${userHandle}\n` +
+    `   • Имя в ТГ: ${userName}\n` +
+    `   • Время заявки: ${submittedAt}\n\n` +
+    '📋 Детали записи:\n' +
+    `   • Имя: ${data.name || '—'}\n` +
+    `   • Телефон: ${data.phone || '—'}\n` +
+    `   • Услуга: ${data.service || '—'}\n` +
+    `   • Дата: ${data.date || '—'}\n` +
+    `   • Время: ${data.time || '—'}\n` +
+    (data.comment ? `   • Коммент: ${data.comment}` : '');
+
+  // 1. СНАЧАЛА в группу (с fallback: с темой → без темы)
+  let groupOk = false;
+  for (const opts of [
+    { message_thread_id: threadId || 1 },
+    { message_thread_id: 1 },
+    {},
+  ]) {
+    const res = await sendMessage(apiUrl, FORUM_CHAT_ID, summary, opts);
+    const resData = await res.json();
+    if (resData.ok) {
+      groupOk = true;
+      break;
+    }
+  }
+
+  // 2. Клиенту подтверждение
+  const confirmText =
+    '✅ Заявка отправлена мастеру.\n\n' +
+    '📋 Вы записались:\n' +
+    `✨ Услуга: ${data.service || '—'}\n` +
+    `📅 Дата: ${data.date || '—'}\n` +
+    `⏰ Время: ${data.time || '—'}\n` +
+    (data.comment ? `💬 Пожелание: ${data.comment}\n\n` : '\n') +
+    'Мастер свяжется с вами для подтверждения.';
+  await sendMessage(apiUrl, chatId, confirmText);
+
+  if (!groupOk) {
+    await sendMessage(
+      apiUrl,
+      chatId,
+      '⚠️ Заявка принята, но не удалось отправить в группу. Проверьте, что бот добавлен в группу с правами на отправку сообщений.'
+    );
   }
 }
 
