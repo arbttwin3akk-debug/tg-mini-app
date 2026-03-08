@@ -9,6 +9,8 @@ compatibility_date = "2024-01-01"
 WEB_APP_URL = "https://arbttwin3akk-debug.github.io/tg-mini-app/"
 # URL Worker для HTTP-заявок (нужен для Web App)
 WORKER_PUBLIC_URL = "https://tg-bot-worker.from1xtru.workers.dev"
+# ID темы «Общее» — сообщения с ссылками t.me из этой темы рассылаются всем клиентам записи
+GENERAL_THREAD_ID = "1"
 
 # KV для связки клиент ↔ тема в группе. id возьми в Cloudflare: Workers & Pages → KV → своё пространство имён.
 [[kv_namespaces]]

@@ -90,18 +90,34 @@ export default {
         return new Response('OK');
       }
 
-      const userId = await store?.get(`thread_${threadId}`);
-      if (!userId) {
-        return new Response('OK');
-      }
-
       // Не пересылаем сообщения самого бота, только менеджеров
       if (msg.from && msg.from.is_bot) {
         return new Response('OK');
       }
 
-      if (msg.text) {
-        await sendMessage(apiUrl, Number(userId), msg.text);
+      // Сообщение в теме «Общее» с ссылками на каналы → рассылка всем клиентам записи
+      const generalThreadId = Number(env.GENERAL_THREAD_ID || '1');
+      const text = msg.text || msg.caption || '';
+      const hasChannelLinks = /t\.me\/|telegram\.me\//i.test(text);
+      if (threadId === generalThreadId && text && hasChannelLinks) {
+        const userIds = await getAllRecordingClientIds(store);
+        for (const uid of userIds) {
+          try {
+            await sendMessage(apiUrl, uid, text);
+            await sleep(60);
+          } catch (_) {}
+        }
+        return new Response('OK');
+      }
+
+      // Ответ менеджера в теме клиента → в ЛС этого клиента
+      const userId = await store?.get(`thread_${threadId}`);
+      if (!userId) {
+        return new Response('OK');
+      }
+
+      if (msg.text || msg.caption) {
+        await sendMessage(apiUrl, Number(userId), msg.text || msg.caption);
       }
     }
 
@@ -369,6 +385,25 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
       '⚠️ Заявка принята, но не удалось отправить в группу. Проверьте, что бот добавлен в группу с правами на отправку сообщений.'
     );
   }
+}
+
+async function getAllRecordingClientIds(store) {
+  if (!store) return [];
+  const ids = new Set();
+  let cursor;
+  do {
+    const list = await store.list({ prefix: 'user_', limit: 1000, cursor });
+    for (const k of list.keys) {
+      const m = k.name.match(/^user_(\d+)$/);
+      if (m) ids.add(Number(m[1]));
+    }
+    cursor = list.list_complete ? undefined : list.cursor;
+  } while (cursor);
+  return [...ids];
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 async function sendMessage(apiUrl, chatId, text, extra = {}) {
