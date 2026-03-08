@@ -10,4 +10,4 @@ compatibility_date = "2024-01-01"
 # KV для связки клиент ↔ тема в группе. id возьми в Cloudflare: Workers & Pages → KV → своё пространство имён.
 [[kv_namespaces]]
 binding = "CLIENT_THREADS"
-id = "a1b2c3d4e5f6789012345678abcdef12"
+id = "6d6a9f79095b4203a37742c9327a60c3"
