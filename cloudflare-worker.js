@@ -56,6 +56,25 @@ export default {
         await sendStartMessage(apiUrl, chatId, webAppUrl, workerUrl);
         return new Response('OK');
       }
+      if (msgText.toLowerCase().startsWith('/broadcast_stats')) {
+        const ids = await getAllRecordingClientIds(store);
+        await sendMessage(apiUrl, chatId, `📊 Клиентов в базе рассылки: ${ids.length}`);
+        return new Response('OK');
+      }
+      if (msgText.toLowerCase().startsWith('/broadcast ') && msgText.length > 10) {
+        const toSend = msgText.slice(10).trim();
+        if (toSend) {
+          const userIds = await getAllRecordingClientIds(store);
+          for (const uid of userIds) {
+            const res = await sendMessage(apiUrl, uid, toSend);
+            const data = await res.json().catch(() => ({}));
+            if (!data.ok && data.error_code === 429) await sleep(1000);
+            await sleep(120);
+          }
+          await sendMessage(apiUrl, chatId, `✅ Разослано ${userIds.length} клиентам.`);
+        }
+        return new Response('OK');
+      }
 
       // Убедиться, что для этого клиента есть тема в группе
       const threadId = update.message.from
@@ -101,27 +120,26 @@ export default {
     // Сообщения из менеджерской группы (форум)
     if (update.message?.chat && String(update.message.chat.id) === FORUM_CHAT_ID) {
       const msg = update.message;
-      const threadId = msg.message_thread_id;
+      const threadId = msg.message_thread_id ?? 0;
 
-      if (!threadId) {
-        return new Response('OK');
-      }
-
-      // Не пересылаем сообщения самого бота, только менеджеров
       if (msg.from && msg.from.is_bot) {
         return new Response('OK');
       }
 
-      // Сообщение в теме «Общее» → рассылка всем клиентам записи (с ссылками или любое, если BROADCAST_ANY)
-      const generalIds = (env.GENERAL_THREAD_ID || '1,2').split(',').map((s) => Number(s.trim())).filter(Boolean);
-      const isGeneralTopic = generalIds.length > 0 && generalIds.includes(Number(threadId));
+      // General topic: message_thread_id часто 0, undefined или 1,2. Рассылка всем клиентам записи
+      const generalIdsRaw = (env.GENERAL_THREAD_ID || '0,1,2').split(',').map((s) => s.trim());
+      const generalIds = new Set([0, ...generalIdsRaw.map((s) => Number(s)).filter((n) => !isNaN(n))]);
+      const isGeneralTopic = generalIds.has(Number(threadId));
       const text = (msg.text || msg.caption || '').trim();
       const hasChannelLinks = /t\.me\/|telegram\.me\/|https?:\/\//i.test(text);
-      const broadcastAny = (env.BROADCAST_ANY_MESSAGE || '').toLowerCase() === 'true';
+      const broadcastAny = (env.BROADCAST_ANY_MESSAGE || 'true').toLowerCase() === 'true';
+
       if (isGeneralTopic && text && (hasChannelLinks || broadcastAny)) {
+        const toSend = text.toLowerCase().startsWith('/broadcast ') ? text.slice(10).trim() : text;
+        if (!toSend) return new Response('OK');
         const userIds = await getAllRecordingClientIds(store);
         for (const uid of userIds) {
-          const res = await sendMessage(apiUrl, uid, text);
+          const res = await sendMessage(apiUrl, uid, toSend);
           const data = await res.json().catch(() => ({}));
           if (!data.ok && data.error_code === 429) await sleep(1000);
           await sleep(120);
@@ -129,14 +147,12 @@ export default {
         return new Response('OK');
       }
 
-      // Ответ менеджера в теме клиента → в ЛС этого клиента
-      const userId = await store?.get(`thread_${threadId}`);
-      if (!userId) {
-        return new Response('OK');
-      }
-
-      if (msg.text || msg.caption) {
-        await sendMessage(apiUrl, Number(userId), msg.text || msg.caption);
+      // Ответ менеджера в теме клиента → в ЛС этого клиента (только если есть thread)
+      if (threadId && threadId !== 0) {
+        const userId = await store?.get(`thread_${threadId}`);
+        if (userId && (msg.text || msg.caption)) {
+          await sendMessage(apiUrl, Number(userId), msg.text || msg.caption);
+        }
       }
     }
 

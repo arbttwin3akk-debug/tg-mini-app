@@ -9,8 +9,8 @@ compatibility_date = "2024-01-01"
 WEB_APP_URL = "https://arbttwin3akk-debug.github.io/tg-mini-app/"
 # URL Worker для HTTP-заявок (нужен для Web App)
 WORKER_PUBLIC_URL = "https://tg-bot-worker.from1xtru.workers.dev"
-# ID темы «Общее» (через запятую, напр. 1,2) — сообщения отсюда рассылаются клиентам записи
-GENERAL_THREAD_ID = "1,2"
+# ID темы «Общее» (0,1,2 — часто General = 0 или 2) — сообщения отсюда рассылаются клиентам
+GENERAL_THREAD_ID = "0,1,2"
 # true — рассылать любое сообщение; false — только сообщения с ссылками (t.me, https)
 BROADCAST_ANY_MESSAGE = "true"
 
