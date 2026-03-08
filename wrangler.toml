@@ -5,7 +5,8 @@ compatibility_date = "2024-01-01"
 
 # BOT_TOKEN задаётся через: npx wrangler secret put BOT_TOKEN
 [vars]
-WEB_APP_URL = "https://tg-mini-app-6tj.pages.dev/"
+# GitHub Pages — часто доступен без VPN (в отличие от Cloudflare)
+WEB_APP_URL = "https://arbttwin3akk-debug.github.io/tg-mini-app/"
 
 # KV для связки клиент ↔ тема в группе. id возьми в Cloudflare: Workers & Pages → KV → своё пространство имён.
 [[kv_namespaces]]

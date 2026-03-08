@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>Запись на маникюр</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg-color: #f0f2f5;
+      --card-bg: #ffffff;
+      --text-color: #1c1e21;
+      --hint-color: #65676b;
+      --button-color: #0088cc;
+      --button-text: #ffffff;
+      --input-bg: #f0f2f5;
+    }
+    body.tg-dark {
+      --bg-color: #18191a;
+      --card-bg: #242526;
+      --text-color: #e4e6eb;
+      --hint-color: #b0b3b8;
+      --button-color: #2e89ff;
+      --input-bg: #3a3b3c;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 500px;
+      background: var(--card-bg);
+      padding: 24px;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    @media (min-width: 600px) {
+      .container {
+        margin-top: 40px;
+        min-height: auto;
+        border-radius: 16px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      }
+    }
+    h1 { font-size: 22px; text-align: center; margin-bottom: 5px; }
+    .subtitle { color: var(--hint-color); text-align: center; font-size: 14px; margin-bottom: 25px; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; font-size: 12px; font-weight: bold; margin-bottom: 5px; color: var(--hint-color); text-transform: uppercase; }
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      background-color: var(--input-bg);
+      color: var(--text-color);
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+    .row { display: flex; gap: 10px; }
+    .btn-submit {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 12px;
+      background-color: var(--button-color);
+      color: var(--button-text);
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 15px;
+    }
+    .browser-notice {
+      display: none;
+      background: #fff3cd;
+      color: #856404;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      border: 1px solid #ffeeba;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="browserNotice" class="browser-notice">
+      ℹ️ Вы открыли приложение вне Telegram. Отправка данных боту недоступна.
+    </div>
+    <h1>Запись к мастеру</h1>
+    <p class="subtitle">Маникюр • Педикюр • Дизайн</p>
+    <div class="form-group">
+      <label>Ваше имя</label>
+      <input type="text" id="name" placeholder="Введите имя">
+    </div>
+    <div class="form-group">
+      <label>Телефон</label>
+      <input type="tel" id="phone" placeholder="+7 (___) ___ - __ - __">
+    </div>
+    <div class="form-group">
+      <label>Услуга</label>
+      <select id="service">
+        <option value="Маникюр + Гель-лак">Маникюр + Гель-лак</option>
+        <option value="Наращивание">Наращивание</option>
+        <option value="Педикюр">Педикюр</option>
+      </select>
+    </div>
+    <div class="row">
+      <div class="form-group" style="flex: 1;">
+        <label>Дата</label>
+        <input type="date" id="date">
+      </div>
+      <div class="form-group" style="flex: 1;">
+        <label>Время</label>
+        <input type="time" id="time">
+      </div>
+    </div>
+    <button id="mainBtn" class="btn-submit">ЗАПИСАТЬСЯ</button>
+  </div>
+  <script>
+    const tg = window.Telegram?.WebApp || {};
+    const btn = document.getElementById('mainBtn');
+    const isTelegram = tg.initData && tg.initData !== "";
+
+    if (isTelegram) {
+      tg.expand();
+      if (tg.colorScheme === 'dark') document.body.classList.add('tg-dark');
+    } else {
+      document.getElementById('browserNotice').style.display = 'block';
+    }
+
+    btn.addEventListener('click', () => {
+      const data = {
+        type: 'manicure_booking',
+        name: document.getElementById('name').value?.trim() || '',
+        phone: document.getElementById('phone').value?.trim() || '',
+        service: document.getElementById('service').value || '',
+        date: document.getElementById('date').value || '',
+        time: document.getElementById('time').value || '',
+        comment: ''
+      };
+
+      if (!data.name || !data.phone || !data.date || !data.time) {
+        alert("Пожалуйста, заполните все поля!");
+        return;
+      }
+
+      if (isTelegram && tg.sendData) {
+        tg.sendData(JSON.stringify(data));
+        tg.close();
+      } else {
+        alert("Форма заполнена! (В Telegram данные ушли бы боту)");
+      }
+    });
+  </script>
+</body>
+</html>
