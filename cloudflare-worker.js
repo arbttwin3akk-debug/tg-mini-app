@@ -23,9 +23,10 @@ export default {
     if (update.message && update.message.chat && update.message.chat.type === 'private') {
       const chatId = update.message.chat.id;
 
-      // Обработка /start
-      if (update.message.text === '/start') {
+      // Обработка /start — сразу приветствие и выход (без создания темы)
+      if (update.message.text && update.message.text.startsWith('/start')) {
         await sendStartMessage(apiUrl, chatId, webAppUrl);
+        return new Response('OK');
       }
 
       // Убедиться, что для этого клиента есть тема в группе
