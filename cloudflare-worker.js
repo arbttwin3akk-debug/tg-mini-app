@@ -56,13 +56,14 @@ export default {
         await sendStartMessage(apiUrl, chatId, webAppUrl, workerUrl);
         return new Response('OK');
       }
-      if (msgText.toLowerCase().startsWith('/broadcast_stats')) {
+      if (/^\/(d|broadcast_stats)(\s|$)/i.test(msgText)) {
         const ids = await getAllRecordingClientIds(store);
         await sendMessage(apiUrl, chatId, `📊 Клиентов в базе рассылки: ${ids.length}`);
         return new Response('OK');
       }
-      if (msgText.toLowerCase().startsWith('/broadcast ') && msgText.length > 10) {
-        const toSend = msgText.slice(10).trim();
+      const broadcastMatch = msgText.match(/^\/(b|broadcast)\s+(.+)$/is);
+      if (broadcastMatch && broadcastMatch[2]?.trim()) {
+        const toSend = broadcastMatch[2].trim();
         if (toSend) {
           const userIds = await getAllRecordingClientIds(store);
           for (const uid of userIds) {
@@ -135,7 +136,8 @@ export default {
       const broadcastAny = (env.BROADCAST_ANY_MESSAGE || 'true').toLowerCase() === 'true';
 
       if (isGeneralTopic && text && (hasChannelLinks || broadcastAny)) {
-        const toSend = text.toLowerCase().startsWith('/broadcast ') ? text.slice(10).trim() : text;
+        const bcMatch = text.match(/^\/(b|broadcast)\s+(.+)$/is);
+        const toSend = bcMatch && bcMatch[2]?.trim() ? bcMatch[2].trim() : text;
         if (!toSend) return new Response('OK');
         const userIds = await getAllRecordingClientIds(store);
         for (const uid of userIds) {
