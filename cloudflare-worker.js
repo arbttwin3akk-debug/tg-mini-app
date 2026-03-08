@@ -220,7 +220,9 @@ async function handleBookingPost(request, env) {
 
   const data = body.data || body;
   const uid = Number(body.uid ?? data.uid);
-  if (!uid || (data.type || body.type) !== 'manicure_booking') {
+  const bookingType = data.type || body.type;
+  const validTypes = ['manicure_booking', 'haircut_booking'];
+  if (!uid || !validTypes.includes(bookingType)) {
     return jsonResponse({ ok: false, error: 'Invalid payload' }, 400);
   }
 
@@ -240,9 +242,10 @@ async function handleBookingPost(request, env) {
   const userName = [userInfo.first_name, userInfo.last_name].filter(Boolean).join(' ').trim() || '—';
   const userHandle = userInfo.username ? `@${userInfo.username}` : 'не указан';
   const submittedAt = new Date().toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'medium' });
+  const categoryLabel = bookingType === 'haircut_booking' ? 'Стрижка' : 'Маникюр';
 
   const summary =
-    '✅ Новая запись!\n\n' +
+    `✅ Новая запись (${categoryLabel})!\n\n` +
     '📱 Контакт в Telegram:\n' +
     `   • ID: ${uid}\n` +
     `   • Username: ${userHandle}\n` +
@@ -361,7 +364,7 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
     return;
   }
 
-  if (data.type !== 'manicure_booking') {
+  if (!['manicure_booking', 'haircut_booking'].includes(data.type)) {
     return;
   }
 
