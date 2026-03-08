@@ -4,9 +4,13 @@ const FORUM_CHAT_ID = '-1003885716640'; // ID закрытой группы (с�
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
+
+const WORK_START = 9;
+const WORK_END = 21;
+const SLOT_DURATION = { manicure: 60, haircut: 30 };
 
 export default {
   async fetch(request, env, ctx) {
@@ -17,7 +21,10 @@ export default {
       return new Response(null, { headers: CORS_HEADERS });
     }
 
-    // HTTP-заявка из Web App (надёжная альтернатива sendData)
+    if (request.method === 'GET' && url.pathname === '/slots') {
+      return handleGetSlots(url, env);
+    }
+
     if (request.method === 'POST' && url.pathname === '/booking') {
       return handleBookingPost(request, env);
     }
@@ -210,6 +217,49 @@ async function sendStartMessage(apiUrl, chatId, webAppUrl, workerUrl) {
   }
 }
 
+function generateSlots(type) {
+  const step = SLOT_DURATION[type] || 60;
+  const slots = [];
+  for (let h = WORK_START; h < WORK_END; h++) {
+    for (let m = 0; m < 60; m += step) {
+      if (h === WORK_END - 1 && m + step > 60) break;
+      slots.push(String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'));
+    }
+  }
+  return slots;
+}
+
+async function handleGetSlots(url, env) {
+  const store = env.CLIENT_THREADS;
+  const date = url.searchParams.get('date');
+  const rawType = url.searchParams.get('type') || '';
+  const type = rawType === 'haircut_booking' ? 'haircut' : 'manicure';
+
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return jsonResponse({ ok: false, error: 'Invalid date' }, 400);
+  }
+
+  const allSlots = generateSlots(type);
+  const booked = new Set();
+
+  if (store) {
+    const prefix = `slot_${date}_${type}_`;
+    let cursor;
+    do {
+      const list = await store.list({ prefix, limit: 1000, ...(cursor && { cursor }) });
+      for (const k of list.keys || []) {
+        const name = k.name ?? k.key ?? '';
+        const time = name.replace(prefix, '');
+        if (time) booked.add(time);
+      }
+      cursor = list.list_complete ? undefined : (list.cursor || null);
+    } while (cursor);
+  }
+
+  const slots = allSlots.map(t => ({ time: t, booked: booked.has(t) }));
+  return jsonResponse({ ok: true, date, type, slots });
+}
+
 async function handleBookingPost(request, env) {
   const token = env.BOT_TOKEN;
   const store = env.CLIENT_THREADS;
@@ -242,9 +292,20 @@ async function handleBookingPost(request, env) {
     return jsonResponse({ ok: false, error: 'Invalid payload' }, 400);
   }
 
+  const slotType = bookingType === 'haircut_booking' ? 'haircut' : 'manicure';
+  const slotDate = data.date || '';
+  const slotTime = data.time || '';
+  if (store && slotDate && slotTime) {
+    const slotKey = `slot_${slotDate}_${slotType}_${slotTime}`;
+    const existing = await store.get(slotKey);
+    if (existing) {
+      return jsonResponse({ ok: false, error: 'slot_taken', message: 'Это время уже занято. Выберите другое.' }, 409);
+    }
+    await store.put(slotKey, String(uid), { expirationTtl: 30 * 86400 });
+  }
+
   const apiUrl = `https://api.telegram.org/bot${token}`;
 
-  // Получить имя пользователя из API (у нас только uid)
   let userInfo = { id: uid, first_name: '', last_name: '', username: '' };
   try {
     const u = await fetch(`${apiUrl}/getChat?chat_id=${uid}`).then((r) => r.json());
@@ -315,6 +376,7 @@ async function handleBookingPost(request, env) {
     date: data.date || '—',
     time: data.time || '—',
     comment: data.comment || '',
+    slotType,
     threadId: threadId || null,
   };
   await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 604800 });
@@ -607,6 +669,9 @@ async function handleCallbackQuery(apiUrl, store, cq) {
     const ref = data.slice(10);
     let raw = await getBooking(ref);
     let b = raw ? JSON.parse(raw) : null;
+    if (b && b.date && b.time && b.slotType) {
+      await store?.delete(`slot_${b.date}_${b.slotType}_${b.time}`);
+    }
     if (!b && fromId) {
       const userName = [cq.from?.first_name, cq.from?.last_name].filter(Boolean).join(' ').trim() || '—';
       const userHandle = cq.from?.username ? `@${cq.from.username}` : '';

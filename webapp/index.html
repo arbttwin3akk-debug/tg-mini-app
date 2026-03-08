@@ -141,6 +141,46 @@
       height: 100%;
       object-fit: cover;
     }
+    .time-slots {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 5px;
+    }
+    .time-slot {
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: var(--input-bg);
+      color: var(--text-color);
+      border: 2px solid transparent;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.15s;
+      min-width: 60px;
+      text-align: center;
+    }
+    .time-slot:hover:not(.booked) { border-color: var(--button-color); }
+    .time-slot.selected {
+      background: var(--button-color);
+      color: var(--button-text);
+      border-color: var(--button-color);
+    }
+    .time-slot.booked {
+      opacity: 0.35;
+      cursor: not-allowed;
+      text-decoration: line-through;
+    }
+    .slots-loading {
+      color: var(--hint-color);
+      font-size: 13px;
+      padding: 8px 0;
+    }
+    .slots-hint {
+      color: var(--hint-color);
+      font-size: 12px;
+      margin-top: 6px;
+    }
     .photo-thumb .remove-photo {
       position: absolute;
       top: 2px;
@@ -215,15 +255,17 @@
           <option value="Дизайн ногтей">Дизайн ногтей</option>
         </select>
       </div>
-      <div class="row">
-        <div class="form-group" style="flex: 1;">
-          <label>Дата</label>
-          <input type="date" id="dateNails">
+      <div class="form-group">
+        <label>Дата</label>
+        <input type="date" id="dateNails">
+      </div>
+      <div class="form-group">
+        <label>Время (выберите свободный слот)</label>
+        <div id="slotsNails" class="time-slots">
+          <span class="slots-loading">Выберите дату, чтобы увидеть доступное время</span>
         </div>
-        <div class="form-group" style="flex: 1;">
-          <label>Время</label>
-          <input type="time" id="timeNails">
-        </div>
+        <div class="slots-hint">Маникюр: 1 час на клиента</div>
+        <input type="hidden" id="timeNails" value="">
       </div>
       <div class="form-group">
         <label>Комментарий (необязательно)</label>
@@ -264,15 +306,17 @@
           <option value="Укладка">Укладка</option>
         </select>
       </div>
-      <div class="row">
-        <div class="form-group" style="flex: 1;">
-          <label>Дата</label>
-          <input type="date" id="dateHaircut">
+      <div class="form-group">
+        <label>Дата</label>
+        <input type="date" id="dateHaircut">
+      </div>
+      <div class="form-group">
+        <label>Время (выберите свободный слот)</label>
+        <div id="slotsHaircut" class="time-slots">
+          <span class="slots-loading">Выберите дату, чтобы увидеть доступное время</span>
         </div>
-        <div class="form-group" style="flex: 1;">
-          <label>Время</label>
-          <input type="time" id="timeHaircut">
-        </div>
+        <div class="slots-hint">Стрижка: 30 мин на клиента</div>
+        <input type="hidden" id="timeHaircut" value="">
       </div>
       <div class="form-group">
         <label>Комментарий (необязательно)</label>
@@ -367,6 +411,80 @@
       return d ? '+7' + d : '';
     }
 
+    const apiBase = (params.get('api') || '').replace(/\/$/, '');
+    const selectedSlot = { Nails: '', Haircut: '' };
+
+    async function loadSlots(suffix, bookingType) {
+      const dateInput = document.getElementById('date' + suffix);
+      const slotsContainer = document.getElementById('slots' + suffix);
+      const timeInput = document.getElementById('time' + suffix);
+      const date = dateInput.value;
+
+      selectedSlot[suffix] = '';
+      timeInput.value = '';
+
+      if (!date) {
+        slotsContainer.innerHTML = '<span class="slots-loading">Выберите дату, чтобы увидеть доступное время</span>';
+        return;
+      }
+
+      if (!apiBase.startsWith('https://')) {
+        const step = bookingType === 'haircut_booking' ? 30 : 60;
+        let html = '';
+        for (let h = 9; h < 21; h++) {
+          for (let m = 0; m < 60; m += step) {
+            const t = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+            html += '<div class="time-slot" data-time="' + t + '">' + t + '</div>';
+          }
+        }
+        slotsContainer.innerHTML = html;
+        bindSlotClicks(suffix);
+        return;
+      }
+
+      slotsContainer.innerHTML = '<span class="slots-loading">Загрузка...</span>';
+      try {
+        const res = await fetch(apiBase + '/slots?date=' + date + '&type=' + bookingType);
+        const json = await res.json();
+        if (!json.ok || !json.slots) throw new Error('bad response');
+
+        if (json.slots.every(s => s.booked)) {
+          slotsContainer.innerHTML = '<span class="slots-loading">На эту дату нет свободных слотов</span>';
+          return;
+        }
+
+        let html = '';
+        for (const s of json.slots) {
+          const cls = s.booked ? 'time-slot booked' : 'time-slot';
+          html += '<div class="' + cls + '" data-time="' + s.time + '">' + s.time + '</div>';
+        }
+        slotsContainer.innerHTML = html;
+        bindSlotClicks(suffix);
+      } catch (e) {
+        slotsContainer.innerHTML = '<span class="slots-loading">Ошибка загрузки слотов</span>';
+      }
+    }
+
+    function bindSlotClicks(suffix) {
+      const container = document.getElementById('slots' + suffix);
+      const timeInput = document.getElementById('time' + suffix);
+      container.querySelectorAll('.time-slot:not(.booked)').forEach(el => {
+        el.addEventListener('click', () => {
+          container.querySelectorAll('.time-slot').forEach(s => s.classList.remove('selected'));
+          el.classList.add('selected');
+          selectedSlot[suffix] = el.dataset.time;
+          timeInput.value = el.dataset.time;
+        });
+      });
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('dateNails').min = today;
+    document.getElementById('dateHaircut').min = today;
+
+    document.getElementById('dateNails').addEventListener('change', () => loadSlots('Nails', 'manicure_booking'));
+    document.getElementById('dateHaircut').addEventListener('change', () => loadSlots('Haircut', 'haircut_booking'));
+
     document.getElementById('mainBtn').addEventListener('click', async () => {
       const activeTab = document.querySelector('.tab.active').dataset.tab;
       const suffix = activeTab === 'nails' ? 'Nails' : 'Haircut';
@@ -382,13 +500,16 @@
         comment: document.getElementById('comment' + suffix).value?.trim() || '',
       };
 
-      if (!data.name || !data.phone || !data.date || !data.time) {
-        alert("Пожалуйста, заполните все поля!");
+      if (!data.name || !data.phone || !data.date) {
+        alert('Пожалуйста, заполните имя, телефон и дату!');
+        return;
+      }
+      if (!data.time) {
+        alert('Пожалуйста, выберите время!');
         return;
       }
 
       const uid = params.get('uid');
-      const apiBase = (params.get('api') || '').replace(/\/$/, '');
       const btn = document.getElementById('mainBtn');
 
       if (uid && apiBase.startsWith('https://')) {
@@ -412,14 +533,20 @@
           const json = await res.json();
           if (json.ok) {
             if (tg.close) tg.close();
-            else alert('✅ Заявка отправлена! Мастер свяжется с вами.');
+            else alert('Заявка отправлена! Мастер свяжется с вами.');
+          } else if (json.error === 'slot_taken') {
+            alert('Это время уже занято! Пожалуйста, выберите другое.');
+            loadSlots(suffix, type);
           } else {
             throw new Error(json.error || 'Ошибка отправки');
           }
         } catch (e) {
+          if (!e.message?.includes('slot_taken')) {
+            alert('Не удалось отправить. Попробуйте ещё раз.');
+          }
+        } finally {
           btn.disabled = false;
           btn.textContent = 'ЗАПИСАТЬСЯ';
-          alert('Не удалось отправить. Попробуйте ещё раз.');
         }
         return;
       }
@@ -428,7 +555,7 @@
         tg.sendData(JSON.stringify(data));
         tg.close();
       } else {
-        alert("Форма заполнена! (В Telegram данные ушли бы боту)");
+        alert('Форма заполнена! (В Telegram данные ушли бы боту)');
       }
     });
   </script>
