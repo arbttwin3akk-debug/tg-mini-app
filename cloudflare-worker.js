@@ -384,7 +384,6 @@ async function handleBookingPost(request, env) {
   const replyMarkup = {
     inline_keyboard: [[
       { text: '❌ Отменить заказ', callback_data: `cancel_${ref}` },
-      { text: '🔄 Перенести заказ', callback_data: `resched_${ref}` },
     ]],
   };
   const confirmRes = await sendMessage(apiUrl, uid, confirmText, { reply_markup: replyMarkup });
@@ -557,7 +556,6 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
   const replyMarkup = {
     inline_keyboard: [[
       { text: '❌ Отменить заказ', callback_data: `cancel_${ref}` },
-      { text: '🔄 Перенести заказ', callback_data: `resched_${ref}` },
     ]],
   };
   const confirmRes = await sendMessage(apiUrl, chatId, confirmText, { reply_markup: replyMarkup });
