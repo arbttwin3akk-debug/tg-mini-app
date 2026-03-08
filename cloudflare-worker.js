@@ -288,7 +288,7 @@ async function handleBookingPost(request, env) {
     (data.comment ? `💬 Пожелание: ${data.comment}\n\n` : '\n') +
     'Мастер свяжется с вами для подтверждения.';
 
-  const ref = `b_${uid}_${Date.now()}`;
+  const ref = `b_${uid}_${Date.now().toString(36)}`;
   const bookingData = {
     uid,
     name: data.name || '—',
@@ -449,7 +449,7 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
     (data.comment ? `💬 Пожелание: ${data.comment}\n\n` : '\n') +
     'Мастер свяжется с вами для подтверждения.';
 
-  const ref = `b_${chatId}_${Date.now()}`;
+  const ref = `b_${chatId}_${Date.now().toString(36)}`;
   const bookingData = {
     uid: chatId,
     name: data.name || '—',
@@ -553,22 +553,36 @@ async function handleCallbackQuery(apiUrl, store, cq) {
   const msgId = cq.message?.message_id;
 
   async function getBooking(ref) {
-    let raw = await store?.get(`booking_${ref}`);
-    if (!raw) {
-      await sleep(2000);
-      raw = await store?.get(`booking_${ref}`);
+    for (let i = 0; i < 3; i++) {
+      const raw = await store?.get(`booking_${ref}`);
+      if (raw) return raw;
+      await sleep(1500);
     }
-    return raw;
+    return null;
+  }
+
+  function parseRef(ref) {
+    const parts = String(ref || '').split('_');
+    if (parts.length >= 2 && /^\d+$/.test(parts[1])) return { uid: parts[1] };
+    return null;
   }
 
   if (data.startsWith('cancel_ok_')) {
     const ref = data.slice(10);
-    const raw = await getBooking(ref);
-    if (!raw) {
+    let raw = await getBooking(ref);
+    let b = raw ? JSON.parse(raw) : null;
+    if (!b) {
+      const parsed = parseRef(ref);
+      if (parsed) {
+        const notify = `❌ Клиент отменил заказ\n\n👤 ID: ${parsed.uid}\n⚠️ Детали из кэша недоступны. Свяжитесь с клиентом для уточнения.`;
+        await sendMessage(apiUrl, FORUM_CHAT_ID, notify);
+        await editMessage(apiUrl, chatId, msgId, '✓ Запись отменена', { inline_keyboard: [] });
+        await answerCallbackQuery(apiUrl, id, 'Запись отменена');
+        return;
+      }
       await answerCallbackQuery(apiUrl, id, 'Запись не найдена или устарела.', true);
       return;
     }
-    const b = JSON.parse(raw);
     const notify =
       `❌ Клиент отменил заказ\n\n` +
       `👤 ${b.name} (id ${b.uid})\n` +
@@ -594,12 +608,20 @@ async function handleCallbackQuery(apiUrl, store, cq) {
 
   if (data.startsWith('resched_ok_')) {
     const ref = data.slice(10);
-    const raw = await getBooking(ref);
-    if (!raw) {
+    let raw = await getBooking(ref);
+    let b = raw ? JSON.parse(raw) : null;
+    if (!b) {
+      const parsed = parseRef(ref);
+      if (parsed) {
+        const notify = `🔄 Клиент хочет перенести заказ\n\n👤 ID: ${parsed.uid}\n⚠️ Детали из кэша недоступны. Свяжитесь для уточнения новой даты.`;
+        await sendMessage(apiUrl, FORUM_CHAT_ID, notify);
+        await editMessage(apiUrl, chatId, msgId, '✓ Запрос отправлен мастеру', { inline_keyboard: [] });
+        await answerCallbackQuery(apiUrl, id, 'Запрос отправлен мастеру');
+        return;
+      }
       await answerCallbackQuery(apiUrl, id, 'Запись не найдена или устарела.', true);
       return;
     }
-    const b = JSON.parse(raw);
     const notify =
       `🔄 Клиент хочет перенести заказ\n\n` +
       `👤 ${b.name} (id ${b.uid})\n` +
@@ -620,12 +642,6 @@ async function handleCallbackQuery(apiUrl, store, cq) {
 
   if (data.startsWith('cancel_')) {
     const ref = data.slice(7);
-    const raw = await getBooking(ref);
-    if (!raw) {
-      await answerCallbackQuery(apiUrl, id, 'Запись не найдена.', true);
-      return;
-    }
-    const b = JSON.parse(raw);
     const confirmText = 'Подтвердите отмену записи?';
     const kb = {
       inline_keyboard: [
@@ -640,11 +656,6 @@ async function handleCallbackQuery(apiUrl, store, cq) {
 
   if (data.startsWith('resched_')) {
     const ref = data.slice(8);
-    const raw = await getBooking(ref);
-    if (!raw) {
-      await answerCallbackQuery(apiUrl, id, 'Запись не найдена.', true);
-      return;
-    }
     const confirmText =
       'Подтвердите перенос записи?\n\nМастер свяжется с вами для уточнения новой даты и времени.';
     const kb = {
