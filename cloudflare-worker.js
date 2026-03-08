@@ -8,19 +8,27 @@ export default {
       return new Response('OK');
     }
 
-    const token = env.BOT_TOKEN;
-    const webAppUrl = env.WEB_APP_URL;
-    const store = env.CLIENT_THREADS; // KV namespace, нужно привязать в Cloudflare
-
-    if (!token) {
-      return new Response('BOT_TOKEN is not set', { status: 500 });
+    let update;
+    try {
+      update = await request.json();
+    } catch (e) {
+      return new Response('OK');
     }
 
-    const update = await request.json();
+    const token = env.BOT_TOKEN;
+    const webAppUrl = env.WEB_APP_URL;
+    const store = env.CLIENT_THREADS;
+
+    if (!token) {
+      console.error('BOT_TOKEN is not set');
+      return new Response('OK');
+    }
+
     const apiUrl = `https://api.telegram.org/bot${token}`;
 
-    // Сообщения из приватного чата с клиентом
-    if (update.message && update.message.chat && update.message.chat.type === 'private') {
+    try {
+      // Сообщения из приватного чата с клиентом
+      if (update?.message?.chat?.type === 'private') {
       const chatId = update.message.chat.id;
 
       // Обработка /start — сразу приветствие и выход (без создания темы)
@@ -30,7 +38,9 @@ export default {
       }
 
       // Убедиться, что для этого клиента есть тема в группе
-      const threadId = await ensureClientThread(apiUrl, store, update.message.from, chatId);
+      const threadId = update.message.from
+        ? await ensureClientThread(apiUrl, store, update.message.from, chatId)
+        : undefined;
 
       // Сообщение из WebApp (web_app_data)
       if (update.message.web_app_data) {
@@ -39,7 +49,7 @@ export default {
       }
 
       // Обычный текст клиента → в его тему (только если тема есть)
-      if (update.message.text && threadId) {
+      if (update.message.text && threadId && update.message.from) {
         const from = update.message.from;
         const prefix = `👤 ${from.first_name || ''}${from.last_name ? ' ' + from.last_name : ''} (id ${from.id})\n\n`;
 
@@ -73,11 +83,13 @@ export default {
       if (msg.text) {
         await sendMessage(apiUrl, Number(userId), msg.text);
       }
-
-      return new Response('OK');
     }
 
     return new Response('OK');
+  } catch (e) {
+    console.error('Worker error:', e);
+    return new Response('OK');
+  }
   },
 };
 
@@ -86,26 +98,31 @@ async function sendStartMessage(apiUrl, chatId, webAppUrl) {
     'Привет! Я бот для записи и общения с мастером.\n\n' +
     'Нажми кнопку ниже, чтобы открыть приложение для записи на маникюр.';
 
-  // Inline-кнопка сразу под сообщением (не внизу экрана)
+  // Сначала пробуем с кнопкой; если Telegram отклонит (неверный URL и т.п.) — шлём без кнопки
   const replyMarkup =
-    webAppUrl && webAppUrl.startsWith('https://')
+    webAppUrl && String(webAppUrl).startsWith('https://')
       ? {
           inline_keyboard: [
             [
               {
                 text: '💅 Записаться',
-                web_app: { url: webAppUrl },
+                web_app: { url: String(webAppUrl).trim() },
               },
             ],
           ],
         }
       : undefined;
 
-  await sendMessage(apiUrl, chatId, text, { reply_markup: replyMarkup });
+  let res = await sendMessage(apiUrl, chatId, text, replyMarkup ? { reply_markup: replyMarkup } : {});
+  let data = await res.json();
+  if (!data.ok && replyMarkup) {
+    res = await sendMessage(apiUrl, chatId, text, {});
+    data = await res.json();
+  }
 }
 
 async function ensureClientThread(apiUrl, store, from, chatId) {
-  if (!store) return undefined;
+  if (!store || !from) return undefined;
 
   const key = `user_${from.id}`;
   const existing = await store.get(key);
