@@ -480,6 +480,17 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
     return;
   }
 
+  const slotType = data.type === 'haircut_booking' ? 'haircut' : 'manicure';
+  if (store && data.date && data.time) {
+    const slotKey = `slot_${data.date}_${slotType}_${data.time}`;
+    const existing = await store.get(slotKey);
+    if (existing) {
+      await sendMessage(apiUrl, chatId, 'Это время уже занято. Пожалуйста, выберите другое.');
+      return;
+    }
+    await store.put(slotKey, String(chatId), { expirationTtl: 30 * 86400 });
+  }
+
   const userName = [from.first_name, from.last_name].filter(Boolean).join(' ').trim() || '—';
   const userHandle = from.username ? `@${from.username}` : 'не указан';
   const submittedAt = message.date
@@ -538,6 +549,7 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
     date: data.date || '—',
     time: data.time || '—',
     comment: data.comment || '',
+    slotType,
     threadId: threadId || null,
   };
   await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 604800 });
@@ -716,6 +728,9 @@ async function handleCallbackQuery(apiUrl, store, cq) {
     const ref = data.slice(10);
     let raw = await getBooking(ref);
     let b = raw ? JSON.parse(raw) : null;
+    if (b && b.date && b.time && b.slotType) {
+      await store?.delete(`slot_${b.date}_${b.slotType}_${b.time}`);
+    }
     if (!b && fromId) {
       const userName = [cq.from?.first_name, cq.from?.last_name].filter(Boolean).join(' ').trim() || '—';
       const userHandle = cq.from?.username ? `@${cq.from.username}` : '';
