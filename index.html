@@ -142,25 +142,26 @@
   </div>
 
   <script>
-    const tg = window.Telegram.WebApp;
+    const tg = window.Telegram?.WebApp || {};
     const btn = document.getElementById('mainBtn');
-    const isTelegram = tg && tg.initData !== "";
+    const isTelegram = typeof tg.sendData === 'function';
 
-    if (isTelegram) {
+    if (tg.initData || isTelegram) {
       tg.expand();
       if (tg.colorScheme === 'dark') document.body.classList.add('tg-dark');
     } else {
       document.getElementById('browserNotice').style.display = 'block';
     }
 
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const data = {
         type: 'manicure_booking',
-        name: document.getElementById('name').value,
-        phone: document.getElementById('phone').value,
-        service: document.getElementById('service').value,
-        date: document.getElementById('date').value,
-        time: document.getElementById('time').value
+        name: document.getElementById('name').value?.trim() || '',
+        phone: document.getElementById('phone').value?.trim() || '',
+        service: document.getElementById('service').value || '',
+        date: document.getElementById('date').value || '',
+        time: document.getElementById('time').value || '',
+        comment: ''
       };
 
       if (!data.name || !data.phone || !data.date || !data.time) {
@@ -168,12 +169,40 @@
         return;
       }
 
+      const params = new URLSearchParams(location.search);
+      const uid = params.get('uid');
+      const apiBase = (params.get('api') || '').replace(/\/$/, '');
+      const canHttp = uid && apiBase.startsWith('https://');
+
+      if (canHttp) {
+        btn.disabled = true;
+        btn.textContent = 'Отправка...';
+        try {
+          const res = await fetch(apiBase + '/booking', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uid: Number(uid), ...data }),
+          });
+          const json = await res.json();
+          if (json.ok) {
+            if (tg.close) tg.close();
+            else alert('✅ Заявка отправлена! Мастер свяжется с вами.');
+          } else {
+            throw new Error(json.error || 'Ошибка отправки');
+          }
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = 'ЗАПИСАТЬСЯ';
+          alert('Не удалось отправить. Попробуйте ещё раз.');
+        }
+        return;
+      }
+
       if (isTelegram) {
         tg.sendData(JSON.stringify(data));
         tg.close();
       } else {
-        console.log("Данные для отправки:", data);
-        alert("Форма заполнена корректно! (В Telegram данные ушли бы боту)");
+        alert("Форма заполнена! (В Telegram данные ушли бы боту)");
       }
     });
   </script>
