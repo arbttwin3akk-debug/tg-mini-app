@@ -32,7 +32,8 @@ export default {
       const chatId = update.message.chat.id;
 
       // Обработка /start — сразу приветствие и выход (без создания темы)
-      if (update.message.text && update.message.text.startsWith('/start')) {
+      const msgText = (update.message.text || '').trim();
+      if (msgText.toLowerCase().startsWith('/start')) {
         await sendStartMessage(apiUrl, chatId, webAppUrl);
         return new Response('OK');
       }
@@ -98,26 +99,31 @@ async function sendStartMessage(apiUrl, chatId, webAppUrl) {
     'Привет! Я бот для записи и общения с мастером.\n\n' +
     'Нажми кнопку ниже, чтобы открыть приложение для записи на маникюр.';
 
-  // Сначала пробуем с кнопкой; если Telegram отклонит (неверный URL и т.п.) — шлём без кнопки
-  const replyMarkup =
-    webAppUrl && String(webAppUrl).startsWith('https://')
-      ? {
-          inline_keyboard: [
-            [
-              {
-                text: '💅 Записаться',
-                web_app: { url: String(webAppUrl).trim() },
-              },
-            ],
-          ],
-        }
-      : undefined;
+  const url = webAppUrl && String(webAppUrl).trim();
+  const withButton = url && url.startsWith('https://');
 
-  let res = await sendMessage(apiUrl, chatId, text, replyMarkup ? { reply_markup: replyMarkup } : {});
-  let data = await res.json();
-  if (!data.ok && replyMarkup) {
-    res = await sendMessage(apiUrl, chatId, text, {});
-    data = await res.json();
+  const body = {
+    chat_id: chatId,
+    text,
+    ...(withButton && {
+      reply_markup: {
+        inline_keyboard: [[{ text: '💅 Записаться', web_app: { url } }]],
+      },
+    }),
+  };
+
+  const res = await fetch(`${apiUrl}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!data.ok && withButton) {
+    await fetch(`${apiUrl}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text }),
+    });
   }
 }
 
