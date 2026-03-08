@@ -299,7 +299,7 @@ async function handleBookingPost(request, env) {
     comment: data.comment || '',
     threadId: threadId || null,
   };
-  await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 86400 });
+  await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 604800 });
 
   const replyMarkup = {
     inline_keyboard: [[
@@ -312,7 +312,7 @@ async function handleBookingPost(request, env) {
   if (confirmJson.ok) {
     bookingData.confirmMsgId = confirmJson.result.message_id;
     bookingData.confirmChatId = uid;
-    await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 86400 });
+    await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 604800 });
   }
 
   return jsonResponse({ ok: true, groupOk }, 200);
@@ -460,7 +460,7 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
     comment: data.comment || '',
     threadId: threadId || null,
   };
-  await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 86400 });
+  await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 604800 });
 
   const replyMarkup = {
     inline_keyboard: [[
@@ -473,7 +473,7 @@ async function handleWebAppData(apiUrl, store, message, threadId) {
   if (confirmJson.ok) {
     bookingData.confirmMsgId = confirmJson.result.message_id;
     bookingData.confirmChatId = chatId;
-    await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 86400 });
+    await store?.put(`booking_${ref}`, JSON.stringify(bookingData), { expirationTtl: 604800 });
   }
 
   if (!groupOk) {
@@ -552,9 +552,18 @@ async function handleCallbackQuery(apiUrl, store, cq) {
   const chatId = cq.message?.chat?.id;
   const msgId = cq.message?.message_id;
 
+  async function getBooking(ref) {
+    let raw = await store?.get(`booking_${ref}`);
+    if (!raw) {
+      await sleep(2000);
+      raw = await store?.get(`booking_${ref}`);
+    }
+    return raw;
+  }
+
   if (data.startsWith('cancel_ok_')) {
     const ref = data.slice(10);
-    const raw = await store?.get(`booking_${ref}`);
+    const raw = await getBooking(ref);
     if (!raw) {
       await answerCallbackQuery(apiUrl, id, 'Запись не найдена или устарела.', true);
       return;
@@ -585,7 +594,7 @@ async function handleCallbackQuery(apiUrl, store, cq) {
 
   if (data.startsWith('resched_ok_')) {
     const ref = data.slice(10);
-    const raw = await store?.get(`booking_${ref}`);
+    const raw = await getBooking(ref);
     if (!raw) {
       await answerCallbackQuery(apiUrl, id, 'Запись не найдена или устарела.', true);
       return;
@@ -611,7 +620,7 @@ async function handleCallbackQuery(apiUrl, store, cq) {
 
   if (data.startsWith('cancel_')) {
     const ref = data.slice(7);
-    const raw = await store?.get(`booking_${ref}`);
+    const raw = await getBooking(ref);
     if (!raw) {
       await answerCallbackQuery(apiUrl, id, 'Запись не найдена.', true);
       return;
@@ -631,7 +640,7 @@ async function handleCallbackQuery(apiUrl, store, cq) {
 
   if (data.startsWith('resched_')) {
     const ref = data.slice(8);
-    const raw = await store?.get(`booking_${ref}`);
+    const raw = await getBooking(ref);
     if (!raw) {
       await answerCallbackQuery(apiUrl, id, 'Запись не найдена.', true);
       return;
