@@ -169,19 +169,35 @@ async function ensureClientThread(apiUrl, store, from, chatId) {
 async function handleWebAppData(apiUrl, store, message, threadId) {
   const chatId = message.chat.id;
   const rawData = message.web_app_data.data;
+  const from = message.from || {};
 
   try {
     const data = JSON.parse(rawData);
 
     if (data.type === 'manicure_booking') {
+      const userName = [from.first_name, from.last_name].filter(Boolean).join(' ').trim() || '—';
+      const userHandle = from.username ? `@${from.username}` : 'не указан';
+      const submittedAt = message.date
+        ? new Date(message.date * 1000).toLocaleString('ru-RU', {
+            dateStyle: 'short',
+            timeStyle: 'medium',
+          })
+        : '—';
+
       const summary =
         '✅ Новая запись!\n\n' +
-        `👤 Имя: ${data.name || '—'}\n` +
-        `📞 Телефон: ${data.phone || '—'}\n` +
-        `✨ Услуга: ${data.service || '—'}\n` +
-        `📅 Дата: ${data.date || '—'}\n` +
-        `⏰ Время: ${data.time || '—'}\n` +
-        (data.comment ? `💬 Коммент: ${data.comment}` : '');
+        '📱 Контакт в Telegram:\n' +
+        `   • ID: ${from.id || '—'}\n` +
+        `   • Username: ${userHandle}\n` +
+        `   • Имя в ТГ: ${userName}\n` +
+        `   • Время заявки: ${submittedAt}\n\n` +
+        '📋 Детали записи:\n' +
+        `   • Имя: ${data.name || '—'}\n` +
+        `   • Телефон: ${data.phone || '—'}\n` +
+        `   • Услуга: ${data.service || '—'}\n` +
+        `   • Дата: ${data.date || '—'}\n` +
+        `   • Время: ${data.time || '—'}\n` +
+        (data.comment ? `   • Коммент: ${data.comment}` : '');
 
       // Клиенту — подтверждение с деталями записи
       const confirmText =
