@@ -1,0 +1,33 @@
+# Deploy standalone-site to GitHub Pages (isolated from bot/webapp)
+name: Deploy standalone-site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'standalone-site/**'
+      - '.github/workflows/standalone-site-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-standalone
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: standalone-site
+      - id: deploy
+        uses: actions/deploy-pages@v4
