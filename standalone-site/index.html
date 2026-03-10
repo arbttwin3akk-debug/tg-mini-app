@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Сайт" />
+  <title>Сайт</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="wrap">
+      <span class="logo">◆</span>
+      <nav class="nav">
+        <a href="#about">О проекте</a>
+        <a href="#features">Возможности</a>
+        <a href="#contact">Контакты</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap hero-inner">
+        <p class="hero-kicker">Добро пожаловать</p>
+        <h1 class="hero-title">Простой и быстрый сайт</h1>
+        <p class="hero-lead">Один HTML, один CSS — без бэкенда и без привязки к ботам. Только контент и вёрстка.</p>
+        <a class="btn" href="#about">Узнать больше</a>
+      </div>
+    </section>
+
+    <section id="about" class="section">
+      <div class="wrap grid-2">
+        <div>
+          <h2 class="section-title">О проекте</h2>
+          <p class="section-text">Это автономная страница: её можно открыть локально или выложить на любой хостинг статики. Нет запросов к Telegram, нет Cloudflare Worker — только то, что лежит в папке.</p>
+        </div>
+        <div class="card">
+          <h3>Состав</h3>
+          <ul class="list">
+            <li>index.html — разметка</li>
+            <li>styles.css — оформление</li>
+            <li>Никаких внешних API</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="section section-alt">
+      <div class="wrap">
+        <h2 class="section-title center">Возможности</h2>
+        <div class="features">
+          <article class="feature">
+            <span class="feature-icon">⚡</span>
+            <h3>Быстро</h3>
+            <p>Статика грузится мгновенно, без серверной логики.</p>
+          </article>
+          <article class="feature">
+            <span class="feature-icon">🔒</span>
+            <h3>Изолированно</h3>
+            <p>Не связан с ботами и воркерами — отдельная папка.</p>
+          </article>
+          <article class="feature">
+            <span class="feature-icon">📱</span>
+            <h3>Адаптивно</h3>
+            <p>Нормально смотрится на телефоне и на десктопе.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="contact" class="section">
+      <div class="wrap center">
+        <h2 class="section-title">Контакты</h2>
+        <p class="section-text narrow">Здесь можно позже вставить почту, соцсети или форму — сейчас блок-заглушка.</p>
+        <p class="muted">standalone-site — только фронт, без бэкенда.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span>© <span id="y"></span></span>
+      <span class="muted">Статический сайт</span>
+    </div>
+  </footer>
+  <script>
+    document.getElementById('y').textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
