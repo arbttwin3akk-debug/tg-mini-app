@@ -1,5 +1,5 @@
 # Cloudflare Worker для Telegram-бота (деплой: npm run deploy)
-name = "tg-bot-worker"
+name = "bottggood"
 main = "cloudflare-worker.js"
 compatibility_date = "2024-01-01"
 
